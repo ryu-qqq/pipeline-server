@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# 가상환경
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# DB
+*.db
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 환경 변수
+.env
+.env.local
+
+# 과제 원본 (제출물에서 제외)
+screening-test.md
+jd.txt
+data/

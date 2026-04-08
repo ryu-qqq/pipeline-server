@@ -1,0 +1,136 @@
+from dataclasses import dataclass
+from datetime import datetime
+
+from app.domain.enums import (
+    ObjectClass,
+    RejectionReason,
+    RoadSurface,
+    Stage,
+    TimeOfDay,
+    Weather,
+)
+
+
+@dataclass(frozen=True)
+class Selection:
+    """선별된 영상 메타데이터 (v1/v2 통합 모델)"""
+
+    id: int
+    recorded_at: datetime
+    temperature_celsius: float
+    wiper_active: bool
+    wiper_level: int | None
+    headlights_on: bool
+    source_path: str
+
+    def __post_init__(self) -> None:
+        if self.id <= 0:
+            raise ValueError(f"id는 양수여야 합니다: {self.id}")
+        if not isinstance(self.recorded_at, datetime):
+            raise TypeError(f"recorded_at은 datetime이어야 합니다: {type(self.recorded_at)}")
+        if self.temperature_celsius < -90 or self.temperature_celsius > 60:
+            raise ValueError(f"temperature_celsius 범위 초과 (-90~60): {self.temperature_celsius}")
+        if self.wiper_level is not None and not (0 <= self.wiper_level <= 3):
+            raise ValueError(f"wiper_level은 0~3 범위여야 합니다: {self.wiper_level}")
+        if not self.source_path:
+            raise ValueError("source_path는 비어있을 수 없습니다")
+
+
+@dataclass(frozen=True)
+class OddTag:
+    """ODD 태깅 결과 (사람이 직접 태깅)"""
+
+    id: int
+    video_id: int
+    weather: Weather
+    time_of_day: TimeOfDay
+    road_surface: RoadSurface
+
+    def __post_init__(self) -> None:
+        if self.id <= 0:
+            raise ValueError(f"id는 양수여야 합니다: {self.id}")
+        if self.video_id <= 0:
+            raise ValueError(f"video_id는 양수여야 합니다: {self.video_id}")
+
+
+@dataclass(frozen=True)
+class Label:
+    """자동 라벨링 결과 (딥러닝 모델 추론)"""
+
+    video_id: int
+    object_class: ObjectClass
+    obj_count: int
+    avg_confidence: float
+    labeled_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.video_id <= 0:
+            raise ValueError(f"video_id는 양수여야 합니다: {self.video_id}")
+        if not isinstance(self.obj_count, int):
+            raise TypeError(f"obj_count는 정수여야 합니다: {self.obj_count}")
+        if self.obj_count < 0:
+            raise ValueError(f"obj_count는 음수일 수 없습니다: {self.obj_count}")
+        if not (0.0 <= self.avg_confidence <= 1.0):
+            raise ValueError(f"avg_confidence는 0.0~1.0 범위여야 합니다: {self.avg_confidence}")
+
+
+@dataclass(frozen=True)
+class Rejection:
+    """정제 과정에서 거부된 레코드"""
+
+    record_identifier: str
+    stage: Stage
+    reason: RejectionReason
+    detail: str
+    raw_data: str
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        if not self.record_identifier:
+            raise ValueError("record_identifier는 비어있을 수 없습니다")
+        if not self.detail:
+            raise ValueError("detail은 비어있을 수 없습니다")
+
+
+@dataclass(frozen=True)
+class RejectionCriteria:
+    """거부 데이터 조회 조건"""
+
+    stage: Stage | None = None
+    reason: RejectionReason | None = None
+    page: int = 1
+    size: int = 20
+
+
+@dataclass(frozen=True)
+class SearchCriteria:
+    """학습 데이터 검색 조건"""
+
+    weather: Weather | None = None
+    time_of_day: TimeOfDay | None = None
+    road_surface: RoadSurface | None = None
+    object_class: ObjectClass | None = None
+    min_obj_count: int | None = None
+    min_confidence: float | None = None
+    page: int = 1
+    size: int = 20
+
+
+@dataclass(frozen=True)
+class StageResult:
+    """단계별 처리 결과"""
+
+    total: int
+    loaded: int
+    rejected: int
+
+
+@dataclass(frozen=True)
+class AnalysisResult:
+    """POST /analyze 응답용 분석 결과"""
+
+    selection: StageResult
+    odd_tagging: StageResult
+    auto_labeling: StageResult
+    fully_linked: int
+    partial: int

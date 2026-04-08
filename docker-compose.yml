@@ -1,0 +1,38 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: pipeline-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: pipeline
+      MYSQL_USER: pipeline
+      MYSQL_PASSWORD: pipeline
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: pipeline-app
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: mysql+pymysql://pipeline:pipeline@mysql:3306/pipeline?charset=utf8mb4
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql-data:

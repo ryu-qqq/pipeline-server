@@ -1,0 +1,54 @@
+[project]
+name = "pipeline-server"
+version = "0.1.0"
+description = "영상 데이터 정제·분석 파이프라인 서버"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy>=2.0.35",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "httpx>=0.27.0",
+    "ruff>=0.6.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+# Java Checkstyle 급 규칙 세트
+select = [
+    "E",     # pycodestyle 에러 (= 기본 문법 규칙)
+    "W",     # pycodestyle 경고
+    "F",     # pyflakes (= 미사용 import, 변수 등)
+    "I",     # isort (= import 정렬, Java의 Spotless import ordering)
+    "N",     # pep8-naming (= Java의 네이밍 컨벤션)
+    "UP",    # pyupgrade (= 최신 Python 문법 강제)
+    "B",     # flake8-bugbear (= 흔한 버그 패턴 감지)
+    "SIM",   # flake8-simplify (= 불필요한 복잡도 제거)
+    "T20",   # flake8-print (= print문 금지, logger 사용 강제)
+    "RUF",   # ruff 자체 규칙
+]
+ignore = [
+    "E501",  # line-length는 formatter가 처리
+    "B008",  # FastAPI Depends()/Query() 패턴 허용 (공식 문서 권장 패턴)
+    "UP046", # Pydantic BaseModel + Generic[T]는 아직 type parameter 문법 미지원
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
