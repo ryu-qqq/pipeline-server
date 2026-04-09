@@ -6,7 +6,20 @@ from app.domain.enums import (
     TimeOfDay,
     Weather,
 )
-from app.domain.exceptions import DomainError
+from app.domain.exceptions import (
+    DataNotFoundError,
+    DomainError,
+    DuplicateRecordError,
+    FractionalCountError,
+    InvalidEnumValueError,
+    InvalidFormatError,
+    InvalidLabelError,
+    InvalidOddTagError,
+    NegativeCountError,
+    SelectionParseError,
+    TemperatureConversionError,
+    UnknownSchemaError,
+)
 from app.domain.models import (
     AnalysisResult,
     Label,
@@ -17,12 +30,29 @@ from app.domain.models import (
     Selection,
     StageResult,
 )
+from app.domain.value_objects import (
+    Confidence,
+    ObjectCount,
+    Temperature,
+    VideoId,
+    WiperState,
+)
 
 __all__ = [
     "AnalysisResult",
+    "Confidence",
+    "DataNotFoundError",
     "DomainError",
+    "DuplicateRecordError",
+    "FractionalCountError",
+    "InvalidEnumValueError",
+    "InvalidFormatError",
+    "InvalidLabelError",
+    "InvalidOddTagError",
     "Label",
+    "NegativeCountError",
     "ObjectClass",
+    "ObjectCount",
     "OddTag",
     "Rejection",
     "RejectionCriteria",
@@ -30,8 +60,14 @@ __all__ = [
     "RoadSurface",
     "SearchCriteria",
     "Selection",
+    "SelectionParseError",
     "Stage",
     "StageResult",
+    "Temperature",
+    "TemperatureConversionError",
     "TimeOfDay",
+    "UnknownSchemaError",
+    "VideoId",
     "Weather",
+    "WiperState",
 ]

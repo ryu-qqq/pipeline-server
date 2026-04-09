@@ -2,7 +2,6 @@ import csv
 import json
 import logging
 from datetime import datetime
-from itertools import islice
 from pathlib import Path
 
 from app.application.parsers import detect_parser
@@ -114,61 +113,45 @@ class AnalysisService:
         return StageResult(total=total, loaded=loaded, rejected=rejected)
 
     def _process_odds(self, valid_selection_ids: set[int]) -> StageResult:
-        """odds.csv 청크 단위 읽기 + 검증 + 적재"""
+        """odds.csv 전체 검증 (중복 검사) + 청크 적재"""
         path = self._data_dir / "odds.csv"
 
-        total = 0
-        loaded = 0
-        rejected = 0
-        validator = OddValidator()
-
         with open(path, newline="") as f:
-            reader = csv.DictReader(f)
-            while True:
-                chunk = list(islice(reader, CHUNK_SIZE))
-                if not chunk:
-                    break
+            rows = list(csv.DictReader(f))
 
-                total += len(chunk)
-                valid, rejections = validator.validate_batch(chunk, valid_selection_ids)
+        total = len(rows)
+        validator = OddValidator()
+        valid, rejections = validator.validate_batch(rows, valid_selection_ids)
 
-                if valid:
-                    self._odd_tag_repo.save_all(valid)
-                if rejections:
-                    self._rejection_repo.save_all(rejections)
+        if valid:
+            self._odd_tag_repo.save_all(valid)
+        if rejections:
+            self._rejection_repo.save_all(rejections)
 
-                loaded += len(valid)
-                rejected += len(rejections)
+        loaded = len(valid)
+        rejected = len(rejections)
 
         logger.info("ODD: total=%d, loaded=%d, rejected=%d", total, loaded, rejected)
         return StageResult(total=total, loaded=loaded, rejected=rejected)
 
     def _process_labels(self, valid_selection_ids: set[int]) -> StageResult:
-        """labels.csv 청크 단위 읽기 + 검증 + 적재"""
+        """labels.csv 전체 검증 (중복 검사) + 청크 적재"""
         path = self._data_dir / "labels.csv"
 
-        total = 0
-        loaded = 0
-        rejected = 0
-        validator = LabelValidator()
-
         with open(path, newline="") as f:
-            reader = csv.DictReader(f)
-            while True:
-                chunk = list(islice(reader, CHUNK_SIZE))
-                if not chunk:
-                    break
+            rows = list(csv.DictReader(f))
 
-                total += len(chunk)
-                valid, rejections = validator.validate_batch(chunk, valid_selection_ids)
+        total = len(rows)
+        validator = LabelValidator()
+        valid, rejections = validator.validate_batch(rows, valid_selection_ids)
 
-                if valid:
-                    self._label_repo.save_all(valid)
-                if rejections:
-                    self._rejection_repo.save_all(rejections)
+        if valid:
+            self._label_repo.save_all(valid)
+        if rejections:
+            self._rejection_repo.save_all(rejections)
 
-                loaded += len(valid)
-                rejected += len(rejections)
+        loaded = len(valid)
+        rejected = len(rejections)
 
         logger.info("Label: total=%d, loaded=%d, rejected=%d", total, loaded, rejected)
         return StageResult(total=total, loaded=loaded, rejected=rejected)

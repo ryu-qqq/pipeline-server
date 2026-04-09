@@ -52,11 +52,11 @@ class SearchResultResponseMapper:
     @staticmethod
     def from_domain(result: SearchResult) -> SearchResultResponse:
         return SearchResultResponse(
-            video_id=result.selection.id,
+            video_id=result.selection.id.value,
             recorded_at=result.selection.recorded_at,
-            temperature_celsius=result.selection.temperature_celsius,
-            wiper_active=result.selection.wiper_active,
-            wiper_level=result.selection.wiper_level,
+            temperature_celsius=result.selection.temperature.celsius,
+            wiper_active=result.selection.wiper.active,
+            wiper_level=result.selection.wiper.level,
             headlights_on=result.selection.headlights_on,
             source_path=result.selection.source_path,
             weather=result.odd_tag.weather.value if result.odd_tag else None,
@@ -65,8 +65,8 @@ class SearchResultResponseMapper:
             labels=[
                 LabelResponse(
                     object_class=lb.object_class.value,
-                    obj_count=lb.obj_count,
-                    avg_confidence=lb.avg_confidence,
+                    obj_count=lb.obj_count.value,
+                    avg_confidence=lb.confidence.value,
                 )
                 for lb in result.labels
             ],

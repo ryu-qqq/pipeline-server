@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 
+from app.domain.exceptions import UnknownSchemaError
 from app.domain.models import Selection
+from app.domain.value_objects import Temperature, VideoId, WiperState
 
 
 class SelectionParser(ABC):
@@ -16,11 +18,10 @@ class V1SelectionParser(SelectionParser):
 
     def parse(self, raw: dict) -> Selection:
         return Selection(
-            id=raw["id"],
+            id=VideoId(raw["id"]),
             recorded_at=_parse_datetime(raw["recordedAt"]),
-            temperature_celsius=float(raw["temperature"]),
-            wiper_active=bool(raw["isWiperOn"]),
-            wiper_level=None,
+            temperature=Temperature.from_celsius(float(raw["temperature"])),
+            wiper=WiperState(active=bool(raw["isWiperOn"])),
             headlights_on=bool(raw["headlightsOn"]),
             source_path=raw["sourcePath"],
         )
@@ -35,18 +36,20 @@ class V2SelectionParser(SelectionParser):
         temp_unit = sensor["temperature"].get("unit", "F")
 
         if temp_unit == "F":
-            temp_celsius = (temp_value - 32) * 5 / 9
+            temperature = Temperature.from_fahrenheit(temp_value)
         elif temp_unit == "C":
-            temp_celsius = float(temp_value)
+            temperature = Temperature.from_celsius(float(temp_value))
         else:
             raise ValueError(f"알 수 없는 온도 단위: {temp_unit}")
 
         return Selection(
-            id=raw["id"],
+            id=VideoId(raw["id"]),
             recorded_at=_parse_datetime(raw["recordedAt"]),
-            temperature_celsius=round(temp_celsius, 2),
-            wiper_active=bool(sensor["wiper"]["isActive"]),
-            wiper_level=int(sensor["wiper"]["level"]),
+            temperature=temperature,
+            wiper=WiperState(
+                active=bool(sensor["wiper"]["isActive"]),
+                level=int(sensor["wiper"]["level"]),
+            ),
             headlights_on=bool(sensor["headlights"]),
             source_path=raw["sourcePath"],
         )
@@ -58,9 +61,8 @@ def detect_parser(raw: dict) -> SelectionParser:
         return V2SelectionParser()
     if "temperature" in raw:
         return V1SelectionParser()
-    raise ValueError(f"알 수 없는 스키마: {list(raw.keys())}")
+    raise UnknownSchemaError(f"알 수 없는 스키마: {list(raw.keys())}")
 
 
 def _parse_datetime(value: str) -> datetime:
-    """ISO 8601 문자열을 datetime으로 변환한다."""
     return datetime.fromisoformat(value)

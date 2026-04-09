@@ -9,31 +9,37 @@ from app.domain.enums import (
     TimeOfDay,
     Weather,
 )
+from app.domain.value_objects import (
+    Confidence,
+    ObjectCount,
+    Temperature,
+    VideoId,
+    WiperState,
+)
 
 
 @dataclass(frozen=True)
 class Selection:
     """선별된 영상 메타데이터 (v1/v2 통합 모델)"""
 
-    id: int
+    id: VideoId
     recorded_at: datetime
-    temperature_celsius: float
-    wiper_active: bool
-    wiper_level: int | None
+    temperature: Temperature
+    wiper: WiperState
     headlights_on: bool
     source_path: str
 
     def __post_init__(self) -> None:
-        if self.id <= 0:
-            raise ValueError(f"id는 양수여야 합니다: {self.id}")
-        if not isinstance(self.recorded_at, datetime):
-            raise TypeError(f"recorded_at은 datetime이어야 합니다: {type(self.recorded_at)}")
-        if self.temperature_celsius < -90 or self.temperature_celsius > 60:
-            raise ValueError(f"temperature_celsius 범위 초과 (-90~60): {self.temperature_celsius}")
-        if self.wiper_level is not None and not (0 <= self.wiper_level <= 3):
-            raise ValueError(f"wiper_level은 0~3 범위여야 합니다: {self.wiper_level}")
         if not self.source_path:
             raise ValueError("source_path는 비어있을 수 없습니다")
+
+    def is_night_driving(self) -> bool:
+        """야간 주행 여부를 센서 데이터로 판단한다."""
+        return self.headlights_on
+
+    def is_adverse_weather_likely(self) -> bool:
+        """악천후 가능성을 센서 데이터로 판단한다."""
+        return self.wiper.is_raining_likely() or self.temperature.celsius < 0
 
 
 @dataclass(frozen=True)
@@ -41,7 +47,7 @@ class OddTag:
     """ODD 태깅 결과 (사람이 직접 태깅)"""
 
     id: int
-    video_id: int
+    video_id: VideoId
     weather: Weather
     time_of_day: TimeOfDay
     road_surface: RoadSurface
@@ -49,29 +55,33 @@ class OddTag:
     def __post_init__(self) -> None:
         if self.id <= 0:
             raise ValueError(f"id는 양수여야 합니다: {self.id}")
-        if self.video_id <= 0:
-            raise ValueError(f"video_id는 양수여야 합니다: {self.video_id}")
+
+    def is_hazardous(self) -> bool:
+        """위험 주행 환경인지 판단한다."""
+        return self.road_surface in (RoadSurface.ICY, RoadSurface.SNOWY) or self.weather == Weather.SNOWY
+
+    def is_low_visibility(self) -> bool:
+        """저시정 환경인지 판단한다."""
+        return self.time_of_day == TimeOfDay.NIGHT or self.weather in (Weather.RAINY, Weather.SNOWY)
 
 
 @dataclass(frozen=True)
 class Label:
     """자동 라벨링 결과 (딥러닝 모델 추론)"""
 
-    video_id: int
+    video_id: VideoId
     object_class: ObjectClass
-    obj_count: int
-    avg_confidence: float
+    obj_count: ObjectCount
+    confidence: Confidence
     labeled_at: datetime
 
-    def __post_init__(self) -> None:
-        if self.video_id <= 0:
-            raise ValueError(f"video_id는 양수여야 합니다: {self.video_id}")
-        if not isinstance(self.obj_count, int):
-            raise TypeError(f"obj_count는 정수여야 합니다: {self.obj_count}")
-        if self.obj_count < 0:
-            raise ValueError(f"obj_count는 음수일 수 없습니다: {self.obj_count}")
-        if not (0.0 <= self.avg_confidence <= 1.0):
-            raise ValueError(f"avg_confidence는 0.0~1.0 범위여야 합니다: {self.avg_confidence}")
+    def is_reliable(self, threshold: float = 0.8) -> bool:
+        """신뢰할 수 있는 라벨인지 판단한다."""
+        return self.confidence.is_high(threshold)
+
+    def has_objects(self) -> bool:
+        """객체가 탐지되었는지 판단한다."""
+        return not self.obj_count.is_empty()
 
 
 @dataclass(frozen=True)
