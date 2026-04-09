@@ -6,9 +6,13 @@ from datetime import datetime
 from pathlib import Path
 
 from app.domain.enums import TaskStatus
+from app.domain.exceptions import DataNotFoundError, InvalidFormatError
 from app.domain.ports import AnalyzeTask, RawDataRepository, StageProgress, TaskDispatcher, TaskRepository
 
 logger = logging.getLogger(__name__)
+
+REQUIRED_ODD_HEADERS = {"id", "video_id", "weather", "time_of_day", "road_surface"}
+REQUIRED_LABEL_HEADERS = {"video_id", "object_class", "obj_count", "avg_confidence", "labeled_at"}
 
 
 class AnalysisService:
@@ -59,18 +63,43 @@ class AnalysisService:
 
     def _load_selections(self, task_id: str) -> int:
         path = self._data_dir / "selections.json"
-        with open(path) as f:
-            raw_list = json.load(f)
+        try:
+            with open(path) as f:
+                raw_list = json.load(f)
+        except FileNotFoundError:
+            raise DataNotFoundError(f"파일을 찾을 수 없습니다: {path}")
+        except json.JSONDecodeError as e:
+            raise InvalidFormatError(f"JSON 파싱 실패: {path} — {e}")
+
+        if not isinstance(raw_list, list):
+            raise InvalidFormatError(f"selections.json은 배열이어야 합니다: {type(raw_list).__name__}")
+
         return self._raw_data_repo.save_raw_selections(task_id, raw_list)
 
     def _load_odds(self, task_id: str) -> int:
         path = self._data_dir / "odds.csv"
-        with open(path, newline="") as f:
-            rows = list(csv.DictReader(f))
+        rows = self._read_csv(path, REQUIRED_ODD_HEADERS)
         return self._raw_data_repo.save_raw_odds(task_id, rows)
 
     def _load_labels(self, task_id: str) -> int:
         path = self._data_dir / "labels.csv"
-        with open(path, newline="") as f:
-            rows = list(csv.DictReader(f))
+        rows = self._read_csv(path, REQUIRED_LABEL_HEADERS)
         return self._raw_data_repo.save_raw_labels(task_id, rows)
+
+    @staticmethod
+    def _read_csv(path: Path, required_headers: set[str]) -> list[dict]:
+        try:
+            with open(path, newline="") as f:
+                rows = list(csv.DictReader(f))
+        except FileNotFoundError:
+            raise DataNotFoundError(f"파일을 찾을 수 없습니다: {path}")
+
+        if not rows:
+            return rows
+
+        actual_headers = set(rows[0].keys())
+        missing = required_headers - actual_headers
+        if missing:
+            raise InvalidFormatError(f"CSV 필수 헤더 누락: {path} — {sorted(missing)}")
+
+        return rows

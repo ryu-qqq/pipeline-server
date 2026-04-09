@@ -17,11 +17,14 @@ from app.adapter.outbound.mysql.repositories import (
     SqlSearchRepository,
     SqlSelectionRepository,
 )
+from app.adapter.outbound.redis.client import get_redis
+from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.analysis_service import AnalysisService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
 from app.application.task_service import TaskService
 from app.domain.ports import (
+    CacheRepository,
     LabelRepository,
     OddTagRepository,
     RawDataRepository,
@@ -97,6 +100,13 @@ def get_task_dispatcher() -> TaskDispatcher:
     return CeleryTaskDispatcher()
 
 
+# === Redis Cache ===
+
+
+def get_cache_repo() -> CacheRepository:
+    return RedisCacheRepository(get_redis())
+
+
 # === Service ===
 
 
@@ -127,5 +137,6 @@ def get_rejection_service(
 
 def get_search_service(
     search_repo: SearchRepository = Depends(get_search_repo),
+    cache_repo: CacheRepository = Depends(get_cache_repo),
 ) -> SearchService:
-    return SearchService(search_repo=search_repo)
+    return SearchService(search_repo=search_repo, cache_repo=cache_repo)

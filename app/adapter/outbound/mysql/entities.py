@@ -29,6 +29,10 @@ class OddTagEntity(Base):
     road_surface: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    __table_args__ = (
+        Index("ix_odd_tags_search", "video_id", "weather", "time_of_day", "road_surface"),
+    )
+
 
 class LabelEntity(Base):
     __tablename__ = "labels"
@@ -41,7 +45,10 @@ class LabelEntity(Base):
     labeled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    __table_args__ = (Index("ix_labels_video_class", "video_id", "object_class", unique=True),)
+    __table_args__ = (
+        Index("ix_labels_video_class", "video_id", "object_class", unique=True),
+        Index("ix_labels_search", "object_class", "obj_count", "avg_confidence"),
+    )
 
 
 class RejectionEntity(Base):
@@ -54,3 +61,7 @@ class RejectionEntity(Base):
     detail: Mapped[str] = mapped_column(Text, nullable=False)
     raw_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_rejections_stage_reason", "stage", "reason"),
+    )
