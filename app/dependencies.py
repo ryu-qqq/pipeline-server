@@ -21,6 +21,7 @@ from app.adapter.outbound.mysql.repositories import (
 from app.adapter.outbound.redis.client import get_redis
 from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.analysis_service import AnalysisService
+from app.application.analyze_task_factory import AnalyzeTaskFactory
 from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
@@ -132,23 +133,34 @@ def get_loader_provider() -> FileLoaderProvider:
     return provider
 
 
+# === Factory ===
+
+
+def get_analyze_task_factory(
+    id_generator: IdGenerator = Depends(get_id_generator),
+    raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
+    loader_provider: FileLoaderProvider = Depends(get_loader_provider),
+) -> AnalyzeTaskFactory:
+    return AnalyzeTaskFactory(
+        id_generator=id_generator,
+        raw_data_repo=raw_data_repo,
+        loader_provider=loader_provider,
+        data_dir=DATA_DIR,
+    )
+
+
 # === Service ===
 
 
 def get_analysis_service(
-    raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
+    task_factory: AnalyzeTaskFactory = Depends(get_analyze_task_factory),
     task_repo: TaskRepository = Depends(get_task_repo),
     task_dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
-    id_generator: IdGenerator = Depends(get_id_generator),
-    loader_provider: FileLoaderProvider = Depends(get_loader_provider),
 ) -> AnalysisService:
     return AnalysisService(
-        raw_data_repo=raw_data_repo,
+        task_factory=task_factory,
         task_repo=task_repo,
         task_dispatcher=task_dispatcher,
-        id_generator=id_generator,
-        loader_provider=loader_provider,
-        data_dir=DATA_DIR,
     )
 
 
