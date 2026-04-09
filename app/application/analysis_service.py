@@ -1,14 +1,12 @@
-import csv
 import itertools
-import json
 import logging
-import uuid
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
 
+from app.application.file_loaders import CsvFileLoader, FileLoader, JsonFileLoader
 from app.domain.enums import TaskStatus
-from app.domain.exceptions import DataNotFoundError, InvalidFormatError
-from app.domain.ports import AnalyzeTask, RawDataRepository, StageProgress, TaskDispatcher, TaskRepository
+from app.domain.ports import AnalyzeTask, IdGenerator, RawDataRepository, StageProgress, TaskDispatcher, TaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -26,21 +24,32 @@ class AnalysisService:
         raw_data_repo: RawDataRepository,
         task_repo: TaskRepository,
         task_dispatcher: TaskDispatcher,
+        id_generator: IdGenerator,
         data_dir: Path,
     ) -> None:
         self._raw_data_repo = raw_data_repo
         self._task_repo = task_repo
         self._task_dispatcher = task_dispatcher
+        self._id_generator = id_generator
         self._data_dir = data_dir
+
+        # FileLoader 전략 -- 상태 없는 순수 전략이므로 내부 생성
+        self._json_loader: FileLoader = JsonFileLoader()
+        self._odd_loader: FileLoader = CsvFileLoader(REQUIRED_ODD_HEADERS)
+        self._label_loader: FileLoader = CsvFileLoader(REQUIRED_LABEL_HEADERS)
 
     def submit(self) -> str:
         """3개 파일을 MongoDB에 적재하고 비동기 정제 작업을 발행한다."""
-        task_id = str(uuid.uuid4())
+        task_id = self._id_generator.generate()
         now = datetime.now()
 
-        sel_count = self._load_selections(task_id)
-        odd_count = self._load_odds(task_id)
-        label_count = self._load_labels(task_id)
+        sel_path = self._data_dir / "selections.json"
+        odd_path = self._data_dir / "odds.csv"
+        label_path = self._data_dir / "labels.csv"
+
+        sel_count = self._load_and_save(self._json_loader, sel_path, task_id, self._raw_data_repo.save_raw_selections)
+        odd_count = self._load_and_save(self._odd_loader, odd_path, task_id, self._raw_data_repo.save_raw_odds)
+        label_count = self._load_and_save(self._label_loader, label_path, task_id, self._raw_data_repo.save_raw_labels)
 
         task = AnalyzeTask(
             task_id=task_id,
@@ -64,76 +73,26 @@ class AnalysisService:
         )
         return task_id
 
-    def _load_selections(self, task_id: str) -> int:
-        """JSON 파일을 파싱하고 청크 단위로 MongoDB에 적재한다.
-
-        JSON은 전체 파싱이 불가피하지만, MongoDB 적재는 청크로 나눠서 메모리 부담을 줄인다.
-        """
-        path = self._data_dir / "selections.json"
-        try:
-            with open(path) as f:
-                raw_list = json.load(f)
-        except FileNotFoundError as err:
-            raise DataNotFoundError(f"파일을 찾을 수 없습니다: {path}") from err
-        except json.JSONDecodeError as e:
-            raise InvalidFormatError(f"JSON 파싱 실패: {path} -- {e}") from e
-
-        if not isinstance(raw_list, list):
-            raise InvalidFormatError(f"selections.json은 배열이어야 합니다: {type(raw_list).__name__}")
-
-        # 청크 단위로 MongoDB 적재
+    def _load_and_save(
+        self,
+        loader: FileLoader,
+        path: Path,
+        task_id: str,
+        save_fn: Callable[[str, list[dict]], int],
+    ) -> int:
+        """FileLoader로 데이터를 읽고 청크 단위로 MongoDB에 적재한다."""
+        records = loader.load(path)
         total = 0
-        for i in range(0, len(raw_list), CHUNK_SIZE):
-            chunk = raw_list[i : i + CHUNK_SIZE]
-            total += self._raw_data_repo.save_raw_selections(task_id, chunk)
-
+        for chunk in self._chunked(records, CHUNK_SIZE):
+            total += save_fn(task_id, chunk)
         return total
 
-    def _load_odds(self, task_id: str) -> int:
-        """CSV 파일을 청크 단위로 읽어서 MongoDB에 적재한다."""
-        path = self._data_dir / "odds.csv"
-        return self._stream_csv(path, REQUIRED_ODD_HEADERS, task_id, "odds")
-
-    def _load_labels(self, task_id: str) -> int:
-        """CSV 파일을 청크 단위로 읽어서 MongoDB에 적재한다."""
-        path = self._data_dir / "labels.csv"
-        return self._stream_csv(path, REQUIRED_LABEL_HEADERS, task_id, "labels")
-
-    def _stream_csv(self, path: Path, required_headers: set[str], task_id: str, source: str) -> int:
-        """CSV를 itertools.islice로 청크 단위 읽기 -> MongoDB 적재.
-
-        전체를 메모리에 올리지 않고 스트리밍 방식으로 처리한다.
-        """
-        try:
-            f = open(path, newline="")  # noqa: SIM115
-        except FileNotFoundError as err:
-            raise DataNotFoundError(f"파일을 찾을 수 없습니다: {path}") from err
-
-        with f:
-            reader = csv.DictReader(f)
-
-            # 헤더 검증 (첫 번째 청크 읽기 전에 수행)
-            if reader.fieldnames is not None:
-                actual_headers = set(reader.fieldnames)
-                missing = required_headers - actual_headers
-                if missing:
-                    raise InvalidFormatError(f"CSV 필수 헤더 누락: {path} -- {sorted(missing)}")
-
-            total = 0
-            save_fn = self._raw_data_repo.save_raw_odds if source == "odds" else self._raw_data_repo.save_raw_labels
-
-            while True:
-                chunk = list(itertools.islice(reader, CHUNK_SIZE))
-                if not chunk:
-                    break
-
-                # 첫 청크에서 헤더 검증 (fieldnames가 None인 경우 대비)
-                if total == 0 and reader.fieldnames is None and chunk:
-                    actual_headers = set(chunk[0].keys())
-                    missing = required_headers - actual_headers
-                    if missing:
-                        raise InvalidFormatError(f"CSV 필수 헤더 누락: {path} -- {sorted(missing)}")
-
-                total += save_fn(task_id, chunk)
-
-        return total
+    @staticmethod
+    def _chunked(iterable: Iterator[dict], size: int) -> Iterator[list[dict]]:
+        """Iterator를 size 단위로 잘라 list 청크를 yield한다."""
+        it = iter(iterable)
+        while True:
+            chunk = list(itertools.islice(it, size))
+            if not chunk:
+                break
+            yield chunk

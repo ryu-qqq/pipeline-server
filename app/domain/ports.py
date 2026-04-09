@@ -174,6 +174,16 @@ class TaskDispatcher(ABC):
     def dispatch(self, task_id: str) -> None: ...
 
 
+# === ID 생성 Port ===
+
+
+class IdGenerator(ABC):
+    """고유 식별자 생성 포트"""
+
+    @abstractmethod
+    def generate(self) -> str: ...
+
+
 # === Redis Cache Ports ===
 
 

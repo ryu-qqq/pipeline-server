@@ -7,6 +7,7 @@ from pymongo.database import Database
 from sqlalchemy.orm import Session
 
 from app.adapter.outbound.celery.dispatcher import CeleryTaskDispatcher
+from app.adapter.outbound.identity.generator import UUIDv4Generator
 from app.adapter.outbound.mongodb.client import get_mongo_db
 from app.adapter.outbound.mongodb.repositories import MongoRawDataRepository, MongoTaskRepository
 from app.adapter.outbound.mysql.database import SessionLocal
@@ -25,6 +26,7 @@ from app.application.search_service import SearchService
 from app.application.task_service import TaskService
 from app.domain.ports import (
     CacheRepository,
+    IdGenerator,
     LabelRepository,
     OddTagRepository,
     RawDataRepository,
@@ -107,6 +109,13 @@ def get_cache_repo() -> CacheRepository:
     return RedisCacheRepository(get_redis())
 
 
+# === ID Generator ===
+
+
+def get_id_generator() -> IdGenerator:
+    return UUIDv4Generator()
+
+
 # === Service ===
 
 
@@ -114,11 +123,13 @@ def get_analysis_service(
     raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
     task_repo: TaskRepository = Depends(get_task_repo),
     task_dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
+    id_generator: IdGenerator = Depends(get_id_generator),
 ) -> AnalysisService:
     return AnalysisService(
         raw_data_repo=raw_data_repo,
         task_repo=task_repo,
         task_dispatcher=task_dispatcher,
+        id_generator=id_generator,
         data_dir=DATA_DIR,
     )
 
