@@ -5,35 +5,35 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from app.domain.ports import AnalyzeTask, RawDataRepository, StageProgress, TaskRepository
+from app.domain.ports import AnalyzeTask, RawDataRepository, StageProgress, TaskDispatcher, TaskRepository
 
 logger = logging.getLogger(__name__)
 
 
 class AnalysisService:
-    """분석 요청 접수 서비스 (Command) — 파일 → MongoDB 적재 + Celery 발행"""
+    """분석 요청 접수 서비스 (Command) — 파일 → MongoDB 적재 + 비동기 작업 발행"""
 
     def __init__(
         self,
         raw_data_repo: RawDataRepository,
         task_repo: TaskRepository,
+        task_dispatcher: TaskDispatcher,
         data_dir: Path,
     ) -> None:
         self._raw_data_repo = raw_data_repo
         self._task_repo = task_repo
+        self._task_dispatcher = task_dispatcher
         self._data_dir = data_dir
 
     def submit(self) -> str:
-        """3개 파일을 MongoDB에 적재하고 task_id를 반환한다."""
+        """3개 파일을 MongoDB에 적재하고 비동기 정제 작업을 발행한다."""
         task_id = str(uuid.uuid4())
         now = datetime.now()
 
-        # Phase 1: 파일 읽기 → MongoDB raw_data에 벌크 저장
         sel_count = self._load_selections(task_id)
         odd_count = self._load_odds(task_id)
         label_count = self._load_labels(task_id)
 
-        # Phase 2: 작업 생성
         task = AnalyzeTask(
             task_id=task_id,
             status="pending",
@@ -43,6 +43,9 @@ class AnalysisService:
             created_at=now,
         )
         self._task_repo.create(task)
+
+        # 비동기 작업 발행 — Port를 통해 (Celery를 직접 모름)
+        self._task_dispatcher.dispatch(task_id)
 
         logger.info(
             "분석 접수: task_id=%s, selections=%d, odds=%d, labels=%d",

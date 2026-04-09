@@ -156,6 +156,16 @@ class TaskRepository(ABC):
     def fail(self, task_id: str, error: str) -> None: ...
 
 
+# === Task Dispatch Port ===
+
+
+class TaskDispatcher(ABC):
+    """비동기 작업 발행 포트"""
+
+    @abstractmethod
+    def dispatch(self, task_id: str) -> None: ...
+
+
 # === Redis Cache Ports ===
 
 

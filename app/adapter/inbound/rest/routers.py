@@ -18,7 +18,6 @@ from app.adapter.inbound.rest.schemas import (
     TaskResponse,
     TaskSubmitResponse,
 )
-from app.adapter.inbound.worker.pipeline_task import process_analysis
 from app.application.analysis_service import AnalysisService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
@@ -37,9 +36,6 @@ router = APIRouter()
 def analyze(service: AnalysisService = Depends(get_analysis_service)):
     """3개 파일을 읽어 MongoDB에 적재하고 비동기 정제 파이프라인을 시작한다."""
     task_id = service.submit()
-
-    # Celery task 발행
-    process_analysis.delay(task_id)
 
     return JSONResponse(
         status_code=202,

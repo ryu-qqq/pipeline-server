@@ -6,6 +6,7 @@ from fastapi import Depends
 from pymongo.database import Database
 from sqlalchemy.orm import Session
 
+from app.adapter.outbound.celery.dispatcher import CeleryTaskDispatcher
 from app.adapter.outbound.mongodb.client import get_mongo_db
 from app.adapter.outbound.mongodb.repositories import MongoRawDataRepository, MongoTaskRepository
 from app.adapter.outbound.mysql.database import SessionLocal
@@ -27,6 +28,7 @@ from app.domain.ports import (
     RejectionRepository,
     SearchRepository,
     SelectionRepository,
+    TaskDispatcher,
     TaskRepository,
 )
 
@@ -88,16 +90,25 @@ def get_task_repo(db: Database = Depends(get_db)) -> TaskRepository:
     return MongoTaskRepository(db)
 
 
+# === Task Dispatcher ===
+
+
+def get_task_dispatcher() -> TaskDispatcher:
+    return CeleryTaskDispatcher()
+
+
 # === Service ===
 
 
 def get_analysis_service(
     raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
     task_repo: TaskRepository = Depends(get_task_repo),
+    task_dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
 ) -> AnalysisService:
     return AnalysisService(
         raw_data_repo=raw_data_repo,
         task_repo=task_repo,
+        task_dispatcher=task_dispatcher,
         data_dir=DATA_DIR,
     )
 
