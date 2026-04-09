@@ -20,6 +20,36 @@ services:
       timeout: 5s
       retries: 10
 
+  mongodb:
+    image: mongo:7.0
+    container_name: pipeline-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: pipeline
+      MONGO_INITDB_ROOT_PASSWORD: pipeline
+      MONGO_INITDB_DATABASE: pipeline
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: pipeline-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     build: .
     container_name: pipeline-app
@@ -27,12 +57,41 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: mysql+pymysql://pipeline:pipeline@mysql:3306/pipeline?charset=utf8mb4
+      MONGO_URL: mongodb://pipeline:pipeline@mongodb:27017/pipeline?authSource=admin
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
       DATA_DIR: /app/data
     volumes:
       - ./data:/app/data:ro
     depends_on:
       mysql:
         condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    container_name: pipeline-worker
+    command: celery -A app.worker worker --loglevel=info --concurrency=2
+    environment:
+      DATABASE_URL: mysql+pymysql://pipeline:pipeline@mysql:3306/pipeline?charset=utf8mb4
+      MONGO_URL: mongodb://pipeline:pipeline@mongodb:27017/pipeline?authSource=admin
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   mysql-data:
+  mongo-data:
+  redis-data:
