@@ -3,9 +3,12 @@ from collections.abc import Generator
 from pathlib import Path
 
 from fastapi import Depends
+from pymongo.database import Database
 from sqlalchemy.orm import Session
 
 from app.adapter.outbound.database import SessionLocal
+from app.adapter.outbound.mongo_repositories import MongoRawDataRepository, MongoTaskRepository
+from app.adapter.outbound.mongodb import get_mongo_db
 from app.adapter.outbound.repositories import (
     SqlLabelRepository,
     SqlOddTagRepository,
@@ -16,19 +19,25 @@ from app.adapter.outbound.repositories import (
 from app.application.analysis_service import AnalysisService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
+from app.application.task_service import TaskService
 from app.domain.ports import (
     LabelRepository,
     OddTagRepository,
+    RawDataRepository,
     RejectionRepository,
     SearchRepository,
     SelectionRepository,
+    TaskRepository,
 )
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
 
 
+# === DB Session ===
+
+
 def get_db_session() -> Generator[Session, None, None]:
-    """요청 단위 DB 세션을 관리한다. (= Spring @Transactional)"""
+    """요청 단위 MySQL 세션을 관리한다."""
     session = SessionLocal()
     try:
         yield session
@@ -38,6 +47,14 @@ def get_db_session() -> Generator[Session, None, None]:
         raise
     finally:
         session.close()
+
+
+def get_db() -> Database:
+    """MongoDB 데이터베이스를 반환한다."""
+    return get_mongo_db()
+
+
+# === MySQL Repository ===
 
 
 def get_selection_repo(session: Session = Depends(get_db_session)) -> SelectionRepository:
@@ -60,19 +77,35 @@ def get_search_repo(session: Session = Depends(get_db_session)) -> SearchReposit
     return SqlSearchRepository(session)
 
 
+# === MongoDB Repository ===
+
+
+def get_raw_data_repo(db: Database = Depends(get_db)) -> RawDataRepository:
+    return MongoRawDataRepository(db)
+
+
+def get_task_repo(db: Database = Depends(get_db)) -> TaskRepository:
+    return MongoTaskRepository(db)
+
+
+# === Service ===
+
+
 def get_analysis_service(
-    selection_repo: SelectionRepository = Depends(get_selection_repo),
-    odd_tag_repo: OddTagRepository = Depends(get_odd_tag_repo),
-    label_repo: LabelRepository = Depends(get_label_repo),
-    rejection_repo: RejectionRepository = Depends(get_rejection_repo),
+    raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
+    task_repo: TaskRepository = Depends(get_task_repo),
 ) -> AnalysisService:
     return AnalysisService(
-        selection_repo=selection_repo,
-        odd_tag_repo=odd_tag_repo,
-        label_repo=label_repo,
-        rejection_repo=rejection_repo,
+        raw_data_repo=raw_data_repo,
+        task_repo=task_repo,
         data_dir=DATA_DIR,
     )
+
+
+def get_task_service(
+    task_repo: TaskRepository = Depends(get_task_repo),
+) -> TaskService:
+    return TaskService(task_repo=task_repo)
 
 
 def get_rejection_service(

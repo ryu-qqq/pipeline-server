@@ -25,6 +25,9 @@ app = FastAPI(
 @app.on_event("startup")
 def on_startup() -> None:
     create_tables()
+    from app.adapter.outbound.mongodb import ensure_indexes
+
+    ensure_indexes()
 
 
 # === 글로벌 예외 핸들러 (= Spring @RestControllerAdvice) ===

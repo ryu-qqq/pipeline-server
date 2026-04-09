@@ -1,34 +1,62 @@
 from fastapi import APIRouter, Depends
+from starlette.responses import JSONResponse
 
 from app.adapter.inbound.mappers import (
-    AnalysisResponseMapper,
     RejectionCriteriaMapper,
     RejectionResponseMapper,
     SearchCriteriaMapper,
     SearchResultResponseMapper,
+    TaskResponseMapper,
 )
+from app.adapter.inbound.pipeline_task import process_analysis
 from app.adapter.inbound.schemas import (
-    AnalysisResponse,
     ApiResponse,
     DataSearchRequest,
     PageApiResponse,
     RejectionResponse,
     RejectionSearchRequest,
     SearchResultResponse,
+    TaskResponse,
+    TaskSubmitResponse,
 )
 from app.application.analysis_service import AnalysisService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
-from app.dependencies import get_analysis_service, get_rejection_service, get_search_service
+from app.application.task_service import TaskService
+from app.dependencies import (
+    get_analysis_service,
+    get_rejection_service,
+    get_search_service,
+    get_task_service,
+)
 
 router = APIRouter()
 
 
-@router.post("/analyze", response_model=ApiResponse[AnalysisResponse])
+@router.post("/analyze", status_code=202, response_model=ApiResponse[TaskSubmitResponse])
 def analyze(service: AnalysisService = Depends(get_analysis_service)):
-    """3개 파일을 읽어 정제 → 적재 → 분석 결과를 반환한다."""
-    result = service.analyze()
-    return ApiResponse(data=AnalysisResponseMapper.from_domain(result))
+    """3개 파일을 읽어 MongoDB에 적재하고 비동기 정제 파이프라인을 시작한다."""
+    task_id = service.submit()
+
+    # Celery task 발행
+    process_analysis.delay(task_id)
+
+    return JSONResponse(
+        status_code=202,
+        content=ApiResponse(
+            data=TaskSubmitResponse(task_id=task_id, status="pending"),
+        ).model_dump(),
+    )
+
+
+@router.get("/analyze/{task_id}", response_model=ApiResponse[TaskResponse])
+def get_task_status(
+    task_id: str,
+    service: TaskService = Depends(get_task_service),
+):
+    """분석 작업의 진행 상태를 조회한다."""
+    task = service.get_task(task_id)
+    return ApiResponse(data=TaskResponseMapper.from_domain(task))
 
 
 @router.get("/rejections", response_model=PageApiResponse[RejectionResponse])

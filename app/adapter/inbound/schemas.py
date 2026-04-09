@@ -70,6 +70,37 @@ class ProblemDetail(BaseModel):
     errors: dict[str, str] | None = None
 
 
+# === Task 응답 ===
+
+
+class StageProgressResponse(BaseModel):
+    total: int
+    processed: int
+    rejected: int
+    percent: float
+
+
+class TaskProgressResponse(BaseModel):
+    selection: StageProgressResponse
+    odd_tagging: StageProgressResponse
+    auto_labeling: StageProgressResponse
+
+
+class TaskResponse(BaseModel):
+    task_id: str
+    status: str
+    progress: TaskProgressResponse
+    result: dict | None = None
+    error: str | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class TaskSubmitResponse(BaseModel):
+    task_id: str
+    status: str
+
+
 # === Request DTO (= Spring @ModelAttribute) ===
 
 

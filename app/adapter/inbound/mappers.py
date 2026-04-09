@@ -5,10 +5,13 @@ from app.adapter.inbound.schemas import (
     RejectionResponse,
     RejectionSearchRequest,
     SearchResultResponse,
+    StageProgressResponse,
     StageResultResponse,
+    TaskProgressResponse,
+    TaskResponse,
 )
 from app.domain.models import AnalysisResult, Rejection, RejectionCriteria, SearchCriteria
-from app.domain.ports import SearchResult
+from app.domain.ports import AnalyzeTask, SearchResult
 
 
 class AnalysisResponseMapper:
@@ -96,4 +99,37 @@ class SearchCriteriaMapper:
             min_confidence=request.min_confidence,
             page=request.page,
             size=request.size,
+        )
+
+
+class TaskResponseMapper:
+    @staticmethod
+    def from_domain(task: AnalyzeTask) -> TaskResponse:
+        return TaskResponse(
+            task_id=task.task_id,
+            status=task.status,
+            progress=TaskProgressResponse(
+                selection=StageProgressResponse(
+                    total=task.selection_progress.total,
+                    processed=task.selection_progress.processed,
+                    rejected=task.selection_progress.rejected,
+                    percent=task.selection_progress.percent,
+                ),
+                odd_tagging=StageProgressResponse(
+                    total=task.odd_tagging_progress.total,
+                    processed=task.odd_tagging_progress.processed,
+                    rejected=task.odd_tagging_progress.rejected,
+                    percent=task.odd_tagging_progress.percent,
+                ),
+                auto_labeling=StageProgressResponse(
+                    total=task.auto_labeling_progress.total,
+                    processed=task.auto_labeling_progress.processed,
+                    rejected=task.auto_labeling_progress.rejected,
+                    percent=task.auto_labeling_progress.percent,
+                ),
+            ),
+            result=task.result,
+            error=task.error,
+            created_at=task.created_at,
+            completed_at=task.completed_at,
         )
