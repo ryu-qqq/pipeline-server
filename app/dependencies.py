@@ -7,8 +7,9 @@ from pymongo.database import Database
 from sqlalchemy.orm import Session
 
 from app.adapter.outbound.identity.generator import UUIDv7Generator
-from app.adapter.outbound.mongodb.client import get_mongo_db
+from app.adapter.outbound.mongodb.client import get_mongo_client, get_mongo_db
 from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository, MongoRawDataRepository, MongoTaskRepository
+from app.adapter.outbound.mongodb.transaction import MongoTransactionManager
 from app.adapter.outbound.mysql.database import SessionLocal
 from app.adapter.outbound.mysql.repositories import (
     SqlLabelRepository,
@@ -38,6 +39,7 @@ from app.domain.ports import (
     SearchRepository,
     SelectionRepository,
     TaskRepository,
+    TransactionManager,
 )
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "data"))
@@ -105,6 +107,14 @@ def get_outbox_repo(db: Database = Depends(get_db)) -> OutboxRepository:
     return MongoOutboxRepository(db)
 
 
+# === Transaction Manager ===
+
+
+def get_tx_manager() -> TransactionManager:
+    """MongoDB 트랜잭션 매니저를 반환한다."""
+    return MongoTransactionManager(get_mongo_client())
+
+
 # === Redis Cache ===
 
 
@@ -166,12 +176,14 @@ def get_analysis_service(
     task_factory: AnalyzeTaskFactory = Depends(get_analyze_task_factory),
     task_repo: TaskRepository = Depends(get_task_repo),
     outbox_repo: OutboxRepository = Depends(get_outbox_repo),
+    tx_manager: TransactionManager = Depends(get_tx_manager),
 ) -> AnalysisService:
     return AnalysisService(
         ingestion_service=ingestion_service,
         task_factory=task_factory,
         task_repo=task_repo,
         outbox_repo=outbox_repo,
+        tx_manager=tx_manager,
     )
 
 

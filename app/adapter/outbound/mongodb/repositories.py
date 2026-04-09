@@ -4,6 +4,7 @@ from pymongo.database import Database
 
 from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, OutboxDocument, RawDataDocument
 from app.adapter.outbound.mongodb.mappers import OutboxDocumentMapper, TaskDocumentMapper
+from app.adapter.outbound.mongodb.transaction import get_current_session
 from app.domain.enums import OutboxStatus, Stage, TaskStatus
 from app.domain.models import AnalyzeTask, OutboxMessage
 from app.domain.ports import OutboxRepository, RawDataRepository, TaskRepository
@@ -35,7 +36,7 @@ class MongoRawDataRepository(RawDataRepository):
         return [doc["data"] for doc in cursor]
 
     def delete_by_task(self, task_id: str) -> None:
-        self._collection.delete_many({"task_id": task_id})
+        self._collection.delete_many({"task_id": task_id}, session=get_current_session())
 
     def _bulk_save(self, task_id: str, source: str, items: list[dict]) -> int:
         total = 0
@@ -45,7 +46,7 @@ class MongoRawDataRepository(RawDataRepository):
             docs = [
                 RawDataDocument(task_id=task_id, source=source, data=item, created_at=now).to_dict() for item in chunk
             ]
-            self._collection.insert_many(docs)
+            self._collection.insert_many(docs, session=get_current_session())
             total += len(chunk)
         return total
 
@@ -58,7 +59,7 @@ class MongoTaskRepository(TaskRepository):
 
     def create(self, task: AnalyzeTask) -> None:
         document = TaskDocumentMapper.to_document(task)
-        self._collection.insert_one(document.to_dict())
+        self._collection.insert_one(document.to_dict(), session=get_current_session())
 
     def find_by_id(self, task_id: str) -> AnalyzeTask | None:
         doc = self._collection.find_one({"_id": task_id})
@@ -68,13 +69,14 @@ class MongoTaskRepository(TaskRepository):
         return TaskDocumentMapper.to_domain(task_doc)
 
     def update_status(self, task_id: str, status: TaskStatus) -> None:
-        self._collection.update_one({"_id": task_id}, {"$set": {"status": status.value}})
+        self._collection.update_one({"_id": task_id}, {"$set": {"status": status.value}}, session=get_current_session())
 
     def update_progress(self, task_id: str, stage: Stage, progress: StageProgress) -> None:
         progress_doc = TaskDocumentMapper.progress_to_document(progress)
         self._collection.update_one(
             {"_id": task_id},
             {"$set": {f"progress.{stage.value}": progress_doc.to_dict()}},
+            session=get_current_session(),
         )
 
     def complete(self, task_id: str, result: dict) -> None:
@@ -87,6 +89,7 @@ class MongoTaskRepository(TaskRepository):
                     "completed_at": datetime.now(),
                 }
             },
+            session=get_current_session(),
         )
 
     def fail(self, task_id: str, error: str) -> None:
@@ -99,12 +102,14 @@ class MongoTaskRepository(TaskRepository):
                     "completed_at": datetime.now(),
                 }
             },
+            session=get_current_session(),
         )
 
     def update_last_completed_phase(self, task_id: str, phase: Stage) -> None:
         self._collection.update_one(
             {"_id": task_id},
             {"$set": {"last_completed_phase": phase.value}},
+            session=get_current_session(),
         )
 
 
@@ -116,7 +121,7 @@ class MongoOutboxRepository(OutboxRepository):
 
     def save(self, message: OutboxMessage) -> None:
         document = OutboxDocumentMapper.to_document(message)
-        self._collection.insert_one(document.to_dict())
+        self._collection.insert_one(document.to_dict(), session=get_current_session())
 
     def find_pending(self, limit: int = 10) -> list[OutboxMessage]:
         cursor = (
@@ -137,16 +142,19 @@ class MongoOutboxRepository(OutboxRepository):
         self._collection.update_one(
             {"_id": message_id},
             {"$set": {"status": OutboxStatus.PUBLISHED.value}},
+            session=get_current_session(),
         )
 
     def mark_failed(self, message_id: str) -> None:
         self._collection.update_one(
             {"_id": message_id},
             {"$set": {"status": OutboxStatus.FAILED.value}},
+            session=get_current_session(),
         )
 
     def increment_retry(self, message_id: str) -> None:
         self._collection.update_one(
             {"_id": message_id},
             {"$inc": {"retry_count": 1}},
+            session=get_current_session(),
         )

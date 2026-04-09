@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 from app.domain.enums import Stage, TaskStatus
 from app.domain.models import (
@@ -152,6 +153,19 @@ class OutboxRepository(ABC):
 
     @abstractmethod
     def increment_retry(self, message_id: str) -> None: ...
+
+
+# === Transaction Port ===
+
+
+class TransactionManager(ABC):
+    """트랜잭션 관리 포트 — 여러 저장소 작업을 원자적으로 실행"""
+
+    @abstractmethod
+    def execute(self, fn: "Callable[[], None]") -> None:
+        """fn 내부의 모든 저장소 작업을 하나의 트랜잭션으로 묶는다.
+        fn이 예외 없이 완료되면 커밋, 예외 시 롤백."""
+        ...
 
 
 # === Task Dispatch Port ===
