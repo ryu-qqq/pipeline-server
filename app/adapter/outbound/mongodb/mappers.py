@@ -3,7 +3,7 @@ from app.adapter.outbound.mongodb.documents import (
     StageProgressDocument,
 )
 from app.domain.enums import Stage, TaskStatus
-from app.domain.ports import AnalyzeTask, StageProgress
+from app.domain.models import AnalyzeTask, StageProgress
 
 
 class TaskDocumentMapper:

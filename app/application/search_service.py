@@ -5,8 +5,8 @@ import logging
 from datetime import datetime
 
 from app.domain.enums import ObjectClass, RoadSurface, TimeOfDay, Weather
-from app.domain.models import Label, OddTag, SearchCriteria, Selection
-from app.domain.ports import CacheRepository, SearchRepository, SearchResult
+from app.domain.models import Label, OddTag, SearchCriteria, SearchResult, Selection
+from app.domain.ports import CacheRepository, SearchRepository
 from app.domain.value_objects import Confidence, ObjectCount, SourcePath, Temperature, VideoId, WiperState
 
 logger = logging.getLogger(__name__)

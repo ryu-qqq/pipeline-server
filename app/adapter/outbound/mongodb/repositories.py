@@ -5,7 +5,8 @@ from pymongo.database import Database
 from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, RawDataDocument
 from app.adapter.outbound.mongodb.mappers import TaskDocumentMapper
 from app.domain.enums import Stage, TaskStatus
-from app.domain.ports import AnalyzeTask, RawDataRepository, StageProgress, TaskRepository
+from app.domain.models import AnalyzeTask, StageProgress
+from app.domain.ports import RawDataRepository, TaskRepository
 
 BULK_INSERT_SIZE = 5000
 

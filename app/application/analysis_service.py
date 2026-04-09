@@ -4,7 +4,8 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from app.application.file_loaders import CsvFileLoader, FileLoader, JsonFileLoader
-from app.domain.ports import AnalyzeTask, IdGenerator, RawDataRepository, TaskDispatcher, TaskRepository
+from app.domain.models import AnalyzeTask
+from app.domain.ports import IdGenerator, RawDataRepository, TaskDispatcher, TaskRepository
 
 logger = logging.getLogger(__name__)
 

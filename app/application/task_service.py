@@ -1,5 +1,6 @@
 from app.domain.exceptions import DataNotFoundError
-from app.domain.ports import AnalyzeTask, TaskRepository
+from app.domain.models import AnalyzeTask
+from app.domain.ports import TaskRepository
 
 
 class TaskService:

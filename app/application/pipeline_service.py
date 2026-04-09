@@ -5,15 +5,13 @@ from datetime import datetime
 from app.application.parsers import detect_parser
 from app.application.validators import LabelValidator, OddValidator
 from app.domain.enums import RejectionReason, Stage, TaskStatus
-from app.domain.models import Rejection, StageResult
+from app.domain.models import AnalyzeTask, Rejection, StageProgress, StageResult
 from app.domain.ports import (
-    AnalyzeTask,
     LabelRepository,
     OddTagRepository,
     RawDataRepository,
     RejectionRepository,
     SelectionRepository,
-    StageProgress,
     TaskRepository,
 )
 

@@ -1,9 +1,17 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from datetime import datetime
 
 from app.domain.enums import Stage, TaskStatus
-from app.domain.models import Label, OddTag, Rejection, RejectionCriteria, SearchCriteria, Selection
+from app.domain.models import (
+    AnalyzeTask,
+    Label,
+    OddTag,
+    Rejection,
+    RejectionCriteria,
+    SearchCriteria,
+    SearchResult,
+    Selection,
+    StageProgress,
+)
 
 # === MySQL Repository Ports ===
 
@@ -69,18 +77,6 @@ class RejectionRepository(ABC):
     def delete_all(self) -> None: ...
 
 
-# === 검색 결과 모델 ===
-
-
-@dataclass(frozen=True)
-class SearchResult:
-    """검색 결과 한 건 (Selection + OddTag + Labels 통합)"""
-
-    selection: Selection
-    odd_tag: OddTag | None
-    labels: list[Label]
-
-
 class SearchRepository(ABC):
     """학습 데이터 검색 포트 (MySQL)"""
 
@@ -89,53 +85,6 @@ class SearchRepository(ABC):
 
 
 # === MongoDB Repository Ports ===
-
-
-@dataclass(frozen=True)
-class StageProgress:
-    """단계별 진행률"""
-
-    total: int = 0
-    processed: int = 0
-    rejected: int = 0
-
-    @property
-    def percent(self) -> float:
-        return round((self.processed + self.rejected) / self.total * 100, 1) if self.total > 0 else 0.0
-
-
-@dataclass(frozen=True)
-class AnalyzeTask:
-    """분석 작업 상태"""
-
-    task_id: str
-    status: TaskStatus
-    selection_progress: StageProgress
-    odd_tagging_progress: StageProgress
-    auto_labeling_progress: StageProgress
-    last_completed_phase: Stage | None = None
-    result: dict | None = None
-    error: str | None = None
-    created_at: datetime | None = None
-    completed_at: datetime | None = None
-
-    @classmethod
-    def create_new(
-        cls,
-        task_id: str,
-        selection_count: int,
-        odd_count: int,
-        label_count: int,
-    ) -> "AnalyzeTask":
-        """신규 분석 작업을 생성한다."""
-        return cls(
-            task_id=task_id,
-            status=TaskStatus.PENDING,
-            selection_progress=StageProgress(total=selection_count),
-            odd_tagging_progress=StageProgress(total=odd_count),
-            auto_labeling_progress=StageProgress(total=label_count),
-            created_at=datetime.now(),
-        )
 
 
 class RawDataRepository(ABC):
