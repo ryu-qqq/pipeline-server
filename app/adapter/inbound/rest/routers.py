@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends
 from starlette.responses import JSONResponse
 
-from app.adapter.inbound.mappers import (
+from app.adapter.inbound.rest.mappers import (
     RejectionCriteriaMapper,
     RejectionResponseMapper,
     SearchCriteriaMapper,
     SearchResultResponseMapper,
     TaskResponseMapper,
 )
-from app.adapter.inbound.pipeline_task import process_analysis
-from app.adapter.inbound.schemas import (
+from app.adapter.inbound.rest.schemas import (
     ApiResponse,
     DataSearchRequest,
     PageApiResponse,
@@ -19,6 +18,7 @@ from app.adapter.inbound.schemas import (
     TaskResponse,
     TaskSubmitResponse,
 )
+from app.adapter.inbound.worker.pipeline_task import process_analysis
 from app.application.analysis_service import AnalysisService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService

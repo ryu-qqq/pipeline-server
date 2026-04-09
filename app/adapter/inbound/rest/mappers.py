@@ -1,4 +1,4 @@
-from app.adapter.inbound.schemas import (
+from app.adapter.inbound.rest.schemas import (
     AnalysisResponse,
     DataSearchRequest,
     LabelResponse,

@@ -4,8 +4,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.adapter.inbound.routers import router
-from app.adapter.inbound.schemas import ProblemDetail
+from app.adapter.inbound.rest.routers import router
+from app.adapter.inbound.rest.schemas import ProblemDetail
 from app.adapter.outbound.mysql.database import create_tables
 from app.domain.exceptions import DomainError
 
