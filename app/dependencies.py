@@ -22,6 +22,7 @@ from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.analysis_service import AnalysisService
 from app.application.analyze_task_factory import AnalyzeTaskFactory
 from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
+from app.application.ingestion_service import IngestionService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
 from app.application.task_service import TaskService
@@ -132,36 +133,45 @@ def get_loader_provider() -> FileLoaderProvider:
     return provider
 
 
-# === Factory ===
+# === Ingestion Service ===
 
 
-def get_analyze_task_factory(
-    id_generator: IdGenerator = Depends(get_id_generator),
+def get_ingestion_service(
     raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
     loader_provider: FileLoaderProvider = Depends(get_loader_provider),
-) -> AnalyzeTaskFactory:
-    return AnalyzeTaskFactory(
-        id_generator=id_generator,
+) -> IngestionService:
+    return IngestionService(
         raw_data_repo=raw_data_repo,
         loader_provider=loader_provider,
         data_dir=DATA_DIR,
     )
 
 
+# === Factory ===
+
+
+def get_analyze_task_factory(
+    id_generator: IdGenerator = Depends(get_id_generator),
+) -> AnalyzeTaskFactory:
+    return AnalyzeTaskFactory(id_generator=id_generator)
+
+
 # === Service ===
 
 
 def get_analysis_service(
+    id_generator: IdGenerator = Depends(get_id_generator),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
     task_factory: AnalyzeTaskFactory = Depends(get_analyze_task_factory),
     task_repo: TaskRepository = Depends(get_task_repo),
     outbox_repo: OutboxRepository = Depends(get_outbox_repo),
-    id_generator: IdGenerator = Depends(get_id_generator),
 ) -> AnalysisService:
     return AnalysisService(
+        id_generator=id_generator,
+        ingestion_service=ingestion_service,
         task_factory=task_factory,
         task_repo=task_repo,
         outbox_repo=outbox_repo,
-        id_generator=id_generator,
     )
 
 
