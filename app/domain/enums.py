@@ -56,6 +56,13 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
 
 
+class FileType(StrEnum):
+    """파일 형식"""
+
+    JSON = "json"
+    CSV = "csv"
+
+
 class RejectionReason(StrEnum):
     """거부 사유"""
 

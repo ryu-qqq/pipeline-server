@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
 
+from app.domain.enums import FileType
 from app.domain.exceptions import DataNotFoundError, InvalidFormatError
 
 RawData = dict  # type alias -- 검증 전 원본 데이터
@@ -49,7 +50,6 @@ class CsvFileLoader(FileLoader):
         with f:
             reader = csv.DictReader(f)
 
-            # 헤더 검증
             if reader.fieldnames is not None:
                 actual_headers = set(reader.fieldnames)
                 missing = self._required_headers - actual_headers
@@ -57,3 +57,28 @@ class CsvFileLoader(FileLoader):
                     raise InvalidFormatError(f"CSV 필수 헤더 누락: {path} -- {sorted(missing)}")
 
             yield from reader
+
+
+class FileLoaderProvider:
+    """FileType에 맞는 FileLoader를 반환하는 프로바이더"""
+
+    def __init__(self) -> None:
+        self._loaders: dict[FileType, FileLoader] = {}
+
+    def register(self, file_type: FileType, loader: FileLoader) -> None:
+        self._loaders[file_type] = loader
+
+    def get_loader(self, file_type: FileType) -> FileLoader:
+        loader = self._loaders.get(file_type)
+        if loader is None:
+            raise InvalidFormatError(f"지원하지 않는 파일 형식: {file_type}")
+        return loader
+
+    def resolve(self, path: Path) -> FileLoader:
+        """파일 확장자에서 FileType을 감지하여 적절한 로더를 반환한다."""
+        suffix = path.suffix.lstrip(".")
+        try:
+            file_type = FileType(suffix)
+        except ValueError as err:
+            raise InvalidFormatError(f"지원하지 않는 파일 확장자: {path.suffix}") from err
+        return self.get_loader(file_type)

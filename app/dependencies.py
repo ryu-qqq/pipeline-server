@@ -21,9 +21,11 @@ from app.adapter.outbound.mysql.repositories import (
 from app.adapter.outbound.redis.client import get_redis
 from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.analysis_service import AnalysisService
+from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
 from app.application.task_service import TaskService
+from app.domain.enums import FileType
 from app.domain.ports import (
     CacheRepository,
     IdGenerator,
@@ -116,6 +118,20 @@ def get_id_generator() -> IdGenerator:
     return UUIDv7Generator()
 
 
+# === FileLoader Provider ===
+
+
+REQUIRED_ODD_HEADERS = {"id", "video_id", "weather", "time_of_day", "road_surface"}
+REQUIRED_LABEL_HEADERS = {"video_id", "object_class", "obj_count", "avg_confidence", "labeled_at"}
+
+
+def get_loader_provider() -> FileLoaderProvider:
+    provider = FileLoaderProvider()
+    provider.register(FileType.JSON, JsonFileLoader())
+    provider.register(FileType.CSV, CsvFileLoader(REQUIRED_ODD_HEADERS | REQUIRED_LABEL_HEADERS))
+    return provider
+
+
 # === Service ===
 
 
@@ -124,12 +140,14 @@ def get_analysis_service(
     task_repo: TaskRepository = Depends(get_task_repo),
     task_dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
     id_generator: IdGenerator = Depends(get_id_generator),
+    loader_provider: FileLoaderProvider = Depends(get_loader_provider),
 ) -> AnalysisService:
     return AnalysisService(
         raw_data_repo=raw_data_repo,
         task_repo=task_repo,
         task_dispatcher=task_dispatcher,
         id_generator=id_generator,
+        loader_provider=loader_provider,
         data_dir=DATA_DIR,
     )
 
