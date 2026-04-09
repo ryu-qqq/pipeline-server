@@ -56,6 +56,14 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
 
 
+class OutboxStatus(StrEnum):
+    """Outbox 메시지 상태"""
+
+    PENDING = "pending"
+    PUBLISHED = "published"
+    FAILED = "failed"
+
+
 class FileType(StrEnum):
     """파일 형식"""
 

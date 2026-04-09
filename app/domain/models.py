@@ -3,6 +3,7 @@ from datetime import datetime
 
 from app.domain.enums import (
     ObjectClass,
+    OutboxStatus,
     RejectionReason,
     RoadSurface,
     Stage,
@@ -184,3 +185,33 @@ class AnalyzeTask:
             auto_labeling_progress=StageProgress(total=label_count),
             created_at=datetime.now(),
         )
+
+
+# === Outbox 메시지 모델 ===
+
+
+@dataclass(frozen=True)
+class OutboxMessage:
+    """Outbox 메시지 — MongoDB 트랜잭션으로 도메인 이벤트 발행을 보장"""
+
+    message_id: str
+    message_type: str
+    payload: dict
+    status: OutboxStatus = OutboxStatus.PENDING
+    retry_count: int = 0
+    max_retries: int = 3
+    created_at: datetime | None = None
+
+    @classmethod
+    def create_analyze_event(cls, message_id: str, task_id: str) -> "OutboxMessage":
+        """분석 작업 발행 이벤트를 생성한다."""
+        return cls(
+            message_id=message_id,
+            message_type="ANALYZE",
+            payload={"task_id": task_id},
+            created_at=datetime.now(),
+        )
+
+    def is_retriable(self) -> bool:
+        """재시도 가능한지 판단한다."""
+        return self.retry_count < self.max_retries

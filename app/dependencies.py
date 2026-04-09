@@ -6,10 +6,9 @@ from fastapi import Depends
 from pymongo.database import Database
 from sqlalchemy.orm import Session
 
-from app.adapter.outbound.celery.dispatcher import CeleryTaskDispatcher
 from app.adapter.outbound.identity.generator import UUIDv7Generator
 from app.adapter.outbound.mongodb.client import get_mongo_db
-from app.adapter.outbound.mongodb.repositories import MongoRawDataRepository, MongoTaskRepository
+from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository, MongoRawDataRepository, MongoTaskRepository
 from app.adapter.outbound.mysql.database import SessionLocal
 from app.adapter.outbound.mysql.repositories import (
     SqlLabelRepository,
@@ -32,11 +31,11 @@ from app.domain.ports import (
     IdGenerator,
     LabelRepository,
     OddTagRepository,
+    OutboxRepository,
     RawDataRepository,
     RejectionRepository,
     SearchRepository,
     SelectionRepository,
-    TaskDispatcher,
     TaskRepository,
 )
 
@@ -98,11 +97,11 @@ def get_task_repo(db: Database = Depends(get_db)) -> TaskRepository:
     return MongoTaskRepository(db)
 
 
-# === Task Dispatcher ===
+# === Outbox Repository ===
 
 
-def get_task_dispatcher() -> TaskDispatcher:
-    return CeleryTaskDispatcher()
+def get_outbox_repo(db: Database = Depends(get_db)) -> OutboxRepository:
+    return MongoOutboxRepository(db)
 
 
 # === Redis Cache ===
@@ -155,12 +154,14 @@ def get_analyze_task_factory(
 def get_analysis_service(
     task_factory: AnalyzeTaskFactory = Depends(get_analyze_task_factory),
     task_repo: TaskRepository = Depends(get_task_repo),
-    task_dispatcher: TaskDispatcher = Depends(get_task_dispatcher),
+    outbox_repo: OutboxRepository = Depends(get_outbox_repo),
+    id_generator: IdGenerator = Depends(get_id_generator),
 ) -> AnalysisService:
     return AnalysisService(
         task_factory=task_factory,
         task_repo=task_repo,
-        task_dispatcher=task_dispatcher,
+        outbox_repo=outbox_repo,
+        id_generator=id_generator,
     )
 
 

@@ -5,6 +5,7 @@ from app.domain.models import (
     AnalyzeTask,
     Label,
     OddTag,
+    OutboxMessage,
     Rejection,
     RejectionCriteria,
     SearchCriteria,
@@ -129,6 +130,28 @@ class TaskRepository(ABC):
 
     @abstractmethod
     def update_last_completed_phase(self, task_id: str, phase: Stage) -> None: ...
+
+
+# === Outbox Port ===
+
+
+class OutboxRepository(ABC):
+    """Outbox 메시지 저장소 포트 (MongoDB)"""
+
+    @abstractmethod
+    def save(self, message: OutboxMessage) -> None: ...
+
+    @abstractmethod
+    def find_pending(self, limit: int = 10) -> list[OutboxMessage]: ...
+
+    @abstractmethod
+    def mark_published(self, message_id: str) -> None: ...
+
+    @abstractmethod
+    def mark_failed(self, message_id: str) -> None: ...
+
+    @abstractmethod
+    def increment_retry(self, message_id: str) -> None: ...
 
 
 # === Task Dispatch Port ===

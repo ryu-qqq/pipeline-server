@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.domain.enums import OutboxStatus
+
 
 @dataclass
 class RawDataDocument:
@@ -94,4 +96,40 @@ class AnalyzeTaskDocument:
             error=doc.get("error"),
             created_at=doc.get("created_at"),
             completed_at=doc.get("completed_at"),
+        )
+
+
+@dataclass
+class OutboxDocument:
+    """MongoDB outbox 컬렉션 도큐먼트"""
+
+    message_id: str
+    message_type: str
+    payload: dict
+    status: str = OutboxStatus.PENDING.value
+    retry_count: int = 0
+    max_retries: int = 3
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> dict:
+        return {
+            "_id": self.message_id,
+            "message_type": self.message_type,
+            "payload": self.payload,
+            "status": self.status,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, doc: dict) -> "OutboxDocument":
+        return cls(
+            message_id=doc["_id"],
+            message_type=doc["message_type"],
+            payload=doc["payload"],
+            status=doc.get("status", OutboxStatus.PENDING.value),
+            retry_count=doc.get("retry_count", 0),
+            max_retries=doc.get("max_retries", 3),
+            created_at=doc.get("created_at", datetime.now()),
         )

@@ -28,3 +28,4 @@ def ensure_indexes() -> None:
     db = get_mongo_db()
     db.raw_data.create_index([("task_id", 1), ("source", 1)])
     db.analyze_tasks.create_index([("status", 1)])
+    db.outbox.create_index([("status", 1), ("created_at", 1)])

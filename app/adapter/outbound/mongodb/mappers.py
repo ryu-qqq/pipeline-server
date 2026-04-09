@@ -1,9 +1,10 @@
 from app.adapter.outbound.mongodb.documents import (
     AnalyzeTaskDocument,
+    OutboxDocument,
     StageProgressDocument,
 )
-from app.domain.enums import Stage, TaskStatus
-from app.domain.models import AnalyzeTask
+from app.domain.enums import OutboxStatus, Stage, TaskStatus
+from app.domain.models import AnalyzeTask, OutboxMessage
 from app.domain.value_objects import StageProgress
 
 
@@ -70,4 +71,32 @@ class TaskDocumentMapper:
             total=domain.total,
             processed=domain.processed,
             rejected=domain.rejected,
+        )
+
+
+class OutboxDocumentMapper:
+    """도메인 OutboxMessage ↔ MongoDB OutboxDocument 변환"""
+
+    @staticmethod
+    def to_document(domain: OutboxMessage) -> OutboxDocument:
+        return OutboxDocument(
+            message_id=domain.message_id,
+            message_type=domain.message_type,
+            payload=domain.payload,
+            status=domain.status.value,
+            retry_count=domain.retry_count,
+            max_retries=domain.max_retries,
+            created_at=domain.created_at,
+        )
+
+    @staticmethod
+    def to_domain(doc: OutboxDocument) -> OutboxMessage:
+        return OutboxMessage(
+            message_id=doc.message_id,
+            message_type=doc.message_type,
+            payload=doc.payload,
+            status=OutboxStatus(doc.status),
+            retry_count=doc.retry_count,
+            max_retries=doc.max_retries,
+            created_at=doc.created_at,
         )

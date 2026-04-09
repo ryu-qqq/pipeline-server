@@ -2,11 +2,11 @@ from datetime import datetime
 
 from pymongo.database import Database
 
-from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, RawDataDocument
-from app.adapter.outbound.mongodb.mappers import TaskDocumentMapper
-from app.domain.enums import Stage, TaskStatus
-from app.domain.models import AnalyzeTask
-from app.domain.ports import RawDataRepository, TaskRepository
+from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, OutboxDocument, RawDataDocument
+from app.adapter.outbound.mongodb.mappers import OutboxDocumentMapper, TaskDocumentMapper
+from app.domain.enums import OutboxStatus, Stage, TaskStatus
+from app.domain.models import AnalyzeTask, OutboxMessage
+from app.domain.ports import OutboxRepository, RawDataRepository, TaskRepository
 from app.domain.value_objects import StageProgress
 
 BULK_INSERT_SIZE = 5000
@@ -105,4 +105,48 @@ class MongoTaskRepository(TaskRepository):
         self._collection.update_one(
             {"_id": task_id},
             {"$set": {"last_completed_phase": phase.value}},
+        )
+
+
+class MongoOutboxRepository(OutboxRepository):
+    """MongoDB Outbox 저장소 구현체"""
+
+    def __init__(self, db: Database) -> None:
+        self._collection = db.outbox
+
+    def save(self, message: OutboxMessage) -> None:
+        document = OutboxDocumentMapper.to_document(message)
+        self._collection.insert_one(document.to_dict())
+
+    def find_pending(self, limit: int = 10) -> list[OutboxMessage]:
+        cursor = (
+            self._collection.find(
+                {"status": OutboxStatus.PENDING.value},
+            )
+            .sort("created_at", 1)
+            .limit(limit)
+        )
+
+        results = []
+        for doc in cursor:
+            outbox_doc = OutboxDocument.from_dict(doc)
+            results.append(OutboxDocumentMapper.to_domain(outbox_doc))
+        return results
+
+    def mark_published(self, message_id: str) -> None:
+        self._collection.update_one(
+            {"_id": message_id},
+            {"$set": {"status": OutboxStatus.PUBLISHED.value}},
+        )
+
+    def mark_failed(self, message_id: str) -> None:
+        self._collection.update_one(
+            {"_id": message_id},
+            {"$set": {"status": OutboxStatus.FAILED.value}},
+        )
+
+    def increment_retry(self, message_id: str) -> None:
+        self._collection.update_one(
+            {"_id": message_id},
+            {"$inc": {"retry_count": 1}},
         )
