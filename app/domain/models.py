@@ -215,3 +215,11 @@ class OutboxMessage:
     def is_retriable(self) -> bool:
         """재시도 가능한지 판단한다."""
         return self.retry_count < self.max_retries
+
+
+@dataclass(frozen=True)
+class AnalyzeTaskBundle:
+    """AnalyzeTask + OutboxMessage 번들 — 팩토리가 한 번에 생성"""
+
+    task: AnalyzeTask
+    outbox: OutboxMessage

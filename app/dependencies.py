@@ -137,10 +137,12 @@ def get_loader_provider() -> FileLoaderProvider:
 
 
 def get_ingestion_service(
+    id_generator: IdGenerator = Depends(get_id_generator),
     raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
     loader_provider: FileLoaderProvider = Depends(get_loader_provider),
 ) -> IngestionService:
     return IngestionService(
+        id_generator=id_generator,
         raw_data_repo=raw_data_repo,
         loader_provider=loader_provider,
         data_dir=DATA_DIR,
@@ -160,14 +162,12 @@ def get_analyze_task_factory(
 
 
 def get_analysis_service(
-    id_generator: IdGenerator = Depends(get_id_generator),
     ingestion_service: IngestionService = Depends(get_ingestion_service),
     task_factory: AnalyzeTaskFactory = Depends(get_analyze_task_factory),
     task_repo: TaskRepository = Depends(get_task_repo),
     outbox_repo: OutboxRepository = Depends(get_outbox_repo),
 ) -> AnalysisService:
     return AnalysisService(
-        id_generator=id_generator,
         ingestion_service=ingestion_service,
         task_factory=task_factory,
         task_repo=task_repo,

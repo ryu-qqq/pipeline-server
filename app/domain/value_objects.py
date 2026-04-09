@@ -155,3 +155,13 @@ class StageResult:
     total: int
     loaded: int
     rejected: int
+
+
+@dataclass(frozen=True)
+class IngestionResult:
+    """파일 적재 결과"""
+
+    task_id: str
+    selection_count: int
+    odd_count: int
+    label_count: int

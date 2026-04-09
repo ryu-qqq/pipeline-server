@@ -1,16 +1,6 @@
-from dataclasses import dataclass
-
-from app.application.ingestion_service import IngestionResult
-from app.domain.models import AnalyzeTask, OutboxMessage
+from app.domain.models import AnalyzeTask, AnalyzeTaskBundle, OutboxMessage
 from app.domain.ports import IdGenerator
-
-
-@dataclass(frozen=True)
-class AnalyzeTaskBundle:
-    """AnalyzeTask + OutboxMessage 번들 — 팩토리가 한 번에 생성"""
-
-    task: AnalyzeTask
-    outbox: OutboxMessage
+from app.domain.value_objects import IngestionResult
 
 
 class AnalyzeTaskFactory:

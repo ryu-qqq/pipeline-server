@@ -2,7 +2,7 @@ import logging
 
 from app.application.analyze_task_factory import AnalyzeTaskFactory
 from app.application.ingestion_service import IngestionService
-from app.domain.ports import IdGenerator, OutboxRepository, TaskRepository
+from app.domain.ports import OutboxRepository, TaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -12,13 +12,11 @@ class AnalysisService:
 
     def __init__(
         self,
-        id_generator: IdGenerator,
         ingestion_service: IngestionService,
         task_factory: AnalyzeTaskFactory,
         task_repo: TaskRepository,
         outbox_repo: OutboxRepository,
     ) -> None:
-        self._id_generator = id_generator
         self._ingestion_service = ingestion_service
         self._task_factory = task_factory
         self._task_repo = task_repo
@@ -26,10 +24,8 @@ class AnalysisService:
 
     def submit(self) -> str:
         """3개 파일을 MongoDB에 적재하고 Outbox에 이벤트를 저장한다."""
-        task_id = self._id_generator.generate()
-
-        # 1. 적재 (IngestionService — 파일 → MongoDB)
-        ingestion = self._ingestion_service.ingest(task_id)
+        # 1. 적재 (IngestionService — ID 생성 + 파일 → MongoDB)
+        ingestion = self._ingestion_service.ingest()
 
         # 2. 생성 (Factory — 순수 객체 조립, 저장소 모름)
         bundle = self._task_factory.create(ingestion)
@@ -38,5 +34,5 @@ class AnalysisService:
         self._task_repo.create(bundle.task)
         self._outbox_repo.save(bundle.outbox)
 
-        logger.info("분석 접수: task_id=%s", task_id)
-        return task_id
+        logger.info("분석 접수: task_id=%s", ingestion.task_id)
+        return ingestion.task_id
