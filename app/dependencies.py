@@ -7,7 +7,7 @@ from pymongo.database import Database
 from sqlalchemy.orm import Session
 
 from app.adapter.outbound.celery.dispatcher import CeleryTaskDispatcher
-from app.adapter.outbound.identity.generator import UUIDv4Generator
+from app.adapter.outbound.identity.generator import UUIDv7Generator
 from app.adapter.outbound.mongodb.client import get_mongo_db
 from app.adapter.outbound.mongodb.repositories import MongoRawDataRepository, MongoTaskRepository
 from app.adapter.outbound.mysql.database import SessionLocal
@@ -113,7 +113,7 @@ def get_cache_repo() -> CacheRepository:
 
 
 def get_id_generator() -> IdGenerator:
-    return UUIDv4Generator()
+    return UUIDv7Generator()
 
 
 # === Service ===
