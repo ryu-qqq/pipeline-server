@@ -22,13 +22,13 @@ from app.application.analysis_service import AnalysisService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
 from app.application.task_service import TaskService
-from app.domain.enums import TaskStatus
 from app.dependencies import (
     get_analysis_service,
     get_rejection_service,
     get_search_service,
     get_task_service,
 )
+from app.domain.enums import TaskStatus
 
 router = APIRouter()
 

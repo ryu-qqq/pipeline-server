@@ -2,7 +2,7 @@ from app.adapter.outbound.mongodb.documents import (
     AnalyzeTaskDocument,
     StageProgressDocument,
 )
-from app.domain.enums import TaskStatus
+from app.domain.enums import Stage, TaskStatus
 from app.domain.ports import AnalyzeTask, StageProgress
 
 
@@ -29,6 +29,7 @@ class TaskDocumentMapper:
                 processed=domain.auto_labeling_progress.processed,
                 rejected=domain.auto_labeling_progress.rejected,
             ),
+            last_completed_phase=domain.last_completed_phase.value if domain.last_completed_phase else None,
             result=domain.result,
             error=domain.error,
             created_at=domain.created_at,
@@ -55,6 +56,7 @@ class TaskDocumentMapper:
                 processed=doc.auto_labeling_progress.processed,
                 rejected=doc.auto_labeling_progress.rejected,
             ),
+            last_completed_phase=Stage(doc.last_completed_phase) if doc.last_completed_phase else None,
             result=doc.result,
             error=doc.error,
             created_at=doc.created_at,

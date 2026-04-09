@@ -98,3 +98,9 @@ class MongoTaskRepository(TaskRepository):
                 }
             },
         )
+
+    def update_last_completed_phase(self, task_id: str, phase: Stage) -> None:
+        self._collection.update_one(
+            {"_id": task_id},
+            {"$set": {"last_completed_phase": phase.value}},
+        )

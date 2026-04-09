@@ -113,6 +113,7 @@ class AnalyzeTask:
     selection_progress: StageProgress
     odd_tagging_progress: StageProgress
     auto_labeling_progress: StageProgress
+    last_completed_phase: Stage | None = None
     result: dict | None = None
     error: str | None = None
     created_at: datetime | None = None
@@ -158,6 +159,9 @@ class TaskRepository(ABC):
 
     @abstractmethod
     def fail(self, task_id: str, error: str) -> None: ...
+
+    @abstractmethod
+    def update_last_completed_phase(self, task_id: str, phase: Stage) -> None: ...
 
 
 # === Task Dispatch Port ===

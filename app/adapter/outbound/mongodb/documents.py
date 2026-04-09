@@ -58,6 +58,7 @@ class AnalyzeTaskDocument:
     selection_progress: StageProgressDocument = field(default_factory=StageProgressDocument)
     odd_tagging_progress: StageProgressDocument = field(default_factory=StageProgressDocument)
     auto_labeling_progress: StageProgressDocument = field(default_factory=StageProgressDocument)
+    last_completed_phase: str | None = None
     result: dict | None = None
     error: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
@@ -72,6 +73,7 @@ class AnalyzeTaskDocument:
                 "odd_tagging": self.odd_tagging_progress.to_dict(),
                 "auto_labeling": self.auto_labeling_progress.to_dict(),
             },
+            "last_completed_phase": self.last_completed_phase,
             "result": self.result,
             "error": self.error,
             "created_at": self.created_at,
@@ -87,6 +89,7 @@ class AnalyzeTaskDocument:
             selection_progress=StageProgressDocument.from_dict(p.get("selection", {})),
             odd_tagging_progress=StageProgressDocument.from_dict(p.get("odd_tagging", {})),
             auto_labeling_progress=StageProgressDocument.from_dict(p.get("auto_labeling", {})),
+            last_completed_phase=doc.get("last_completed_phase"),
             result=doc.get("result"),
             error=doc.get("error"),
             created_at=doc.get("created_at"),
