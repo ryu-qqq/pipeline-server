@@ -1,12 +1,10 @@
 import itertools
 import logging
 from collections.abc import Callable, Iterator
-from datetime import datetime
 from pathlib import Path
 
 from app.application.file_loaders import CsvFileLoader, FileLoader, JsonFileLoader
-from app.domain.enums import TaskStatus
-from app.domain.ports import AnalyzeTask, IdGenerator, RawDataRepository, StageProgress, TaskDispatcher, TaskRepository
+from app.domain.ports import AnalyzeTask, IdGenerator, RawDataRepository, TaskDispatcher, TaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +39,6 @@ class AnalysisService:
     def submit(self) -> str:
         """3개 파일을 MongoDB에 적재하고 비동기 정제 작업을 발행한다."""
         task_id = self._id_generator.generate()
-        now = datetime.now()
 
         sel_path = self._data_dir / "selections.json"
         odd_path = self._data_dir / "odds.csv"
@@ -51,13 +48,11 @@ class AnalysisService:
         odd_count = self._load_and_save(self._odd_loader, odd_path, task_id, self._raw_data_repo.save_raw_odds)
         label_count = self._load_and_save(self._label_loader, label_path, task_id, self._raw_data_repo.save_raw_labels)
 
-        task = AnalyzeTask(
+        task = AnalyzeTask.create_new(
             task_id=task_id,
-            status=TaskStatus.PENDING,
-            selection_progress=StageProgress(total=sel_count),
-            odd_tagging_progress=StageProgress(total=odd_count),
-            auto_labeling_progress=StageProgress(total=label_count),
-            created_at=now,
+            selection_count=sel_count,
+            odd_count=odd_count,
+            label_count=label_count,
         )
         self._task_repo.create(task)
 

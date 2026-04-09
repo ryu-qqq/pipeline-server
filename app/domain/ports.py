@@ -119,6 +119,24 @@ class AnalyzeTask:
     created_at: datetime | None = None
     completed_at: datetime | None = None
 
+    @classmethod
+    def create_new(
+        cls,
+        task_id: str,
+        selection_count: int,
+        odd_count: int,
+        label_count: int,
+    ) -> "AnalyzeTask":
+        """신규 분석 작업을 생성한다."""
+        return cls(
+            task_id=task_id,
+            status=TaskStatus.PENDING,
+            selection_progress=StageProgress(total=selection_count),
+            odd_tagging_progress=StageProgress(total=odd_count),
+            auto_labeling_progress=StageProgress(total=label_count),
+            created_at=datetime.now(),
+        )
+
 
 class RawDataRepository(ABC):
     """원본 데이터 저장소 포트 (MongoDB)"""
