@@ -6,10 +6,10 @@ from fastapi import Depends
 from pymongo.database import Database
 from sqlalchemy.orm import Session
 
-from app.adapter.outbound.database import SessionLocal
-from app.adapter.outbound.mongo_repositories import MongoRawDataRepository, MongoTaskRepository
-from app.adapter.outbound.mongodb import get_mongo_db
-from app.adapter.outbound.repositories import (
+from app.adapter.outbound.mongodb.client import get_mongo_db
+from app.adapter.outbound.mongodb.repositories import MongoRawDataRepository, MongoTaskRepository
+from app.adapter.outbound.mysql.database import SessionLocal
+from app.adapter.outbound.mysql.repositories import (
     SqlLabelRepository,
     SqlOddTagRepository,
     SqlRejectionRepository,

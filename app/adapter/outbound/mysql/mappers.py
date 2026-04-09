@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.adapter.outbound.entities import (
+from app.adapter.outbound.mysql.entities import (
     LabelEntity,
     OddTagEntity,
     RejectionEntity,

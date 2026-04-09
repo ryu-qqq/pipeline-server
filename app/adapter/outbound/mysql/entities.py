@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Float, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.adapter.outbound.database import Base
+from app.adapter.outbound.mysql.database import Base
 
 
 class SelectionEntity(Base):

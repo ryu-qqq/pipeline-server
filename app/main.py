@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.adapter.inbound.routers import router
 from app.adapter.inbound.schemas import ProblemDetail
-from app.adapter.outbound.database import create_tables
+from app.adapter.outbound.mysql.database import create_tables
 from app.domain.exceptions import DomainError
 
 logging.basicConfig(
@@ -25,7 +25,7 @@ app = FastAPI(
 @app.on_event("startup")
 def on_startup() -> None:
     create_tables()
-    from app.adapter.outbound.mongodb import ensure_indexes
+    from app.adapter.outbound.mongodb.client import ensure_indexes
 
     ensure_indexes()
 

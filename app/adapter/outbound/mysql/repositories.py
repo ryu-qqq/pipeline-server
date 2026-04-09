@@ -3,19 +3,19 @@ from itertools import islice
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.adapter.outbound.entities import (
+from app.adapter.outbound.mysql.entities import (
     LabelEntity,
     OddTagEntity,
     RejectionEntity,
     SelectionEntity,
 )
-from app.adapter.outbound.mappers import (
+from app.adapter.outbound.mysql.mappers import (
     LabelMapper,
     OddTagMapper,
     RejectionMapper,
     SelectionMapper,
 )
-from app.adapter.outbound.query_builder import RejectionQueryBuilder, SearchQueryBuilder
+from app.adapter.outbound.mysql.query_builder import RejectionQueryBuilder, SearchQueryBuilder
 from app.domain.models import Label, OddTag, Rejection, RejectionCriteria, SearchCriteria, Selection
 from app.domain.ports import (
     LabelRepository,

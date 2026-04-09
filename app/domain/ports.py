@@ -154,3 +154,19 @@ class TaskRepository(ABC):
 
     @abstractmethod
     def fail(self, task_id: str, error: str) -> None: ...
+
+
+# === Redis Cache Ports ===
+
+
+class CacheRepository(ABC):
+    """캐시 저장소 포트 (Redis)"""
+
+    @abstractmethod
+    def get(self, key: str) -> dict | None: ...
+
+    @abstractmethod
+    def set(self, key: str, data: dict, ttl: int) -> None: ...
+
+    @abstractmethod
+    def invalidate_pattern(self, pattern: str) -> None: ...

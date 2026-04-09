@@ -1,15 +1,16 @@
 import logging
 
-from app.adapter.outbound.database import SessionLocal, create_tables
-from app.adapter.outbound.mongo_repositories import MongoRawDataRepository, MongoTaskRepository
-from app.adapter.outbound.mongodb import get_mongo_db
-from app.adapter.outbound.redis_client import invalidate_search_cache
-from app.adapter.outbound.repositories import (
+from app.adapter.outbound.mongodb.client import get_mongo_db
+from app.adapter.outbound.mongodb.repositories import MongoRawDataRepository, MongoTaskRepository
+from app.adapter.outbound.mysql.database import SessionLocal, create_tables
+from app.adapter.outbound.mysql.repositories import (
     SqlLabelRepository,
     SqlOddTagRepository,
     SqlRejectionRepository,
     SqlSelectionRepository,
 )
+from app.adapter.outbound.redis.client import get_redis
+from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.pipeline_service import PipelineService
 from app.worker import celery_app
 
@@ -43,7 +44,8 @@ def process_analysis(self, task_id: str) -> None:
         session.commit()
 
         # 정제 완료 → 검색 캐시 무효화 (데이터가 변경됐으므로)
-        invalidate_search_cache()
+        cache = RedisCacheRepository(get_redis())
+        cache.invalidate_pattern("search:*")
 
         logger.info("파이프라인 완료: task_id=%s", task_id)
 

@@ -1,6 +1,6 @@
 from sqlalchemy import Select, and_, func, select
 
-from app.adapter.outbound.entities import (
+from app.adapter.outbound.mysql.entities import (
     LabelEntity,
     OddTagEntity,
     RejectionEntity,
