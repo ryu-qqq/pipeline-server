@@ -112,3 +112,24 @@ class WiperState:
     def is_raining_likely(self) -> bool:
         """와이퍼 상태로 비 올 가능성을 판단한다."""
         return self.active and self.level is not None and self.level >= 2
+
+
+@dataclass(frozen=True)
+class SourcePath:
+    """영상 파일 경로"""
+
+    value: str
+
+    def __post_init__(self) -> None:
+        if not self.value:
+            raise InvalidFormatError("source_path는 비어있을 수 없습니다")
+        if not self.value.endswith(".mp4"):
+            raise InvalidFormatError(f"지원하지 않는 파일 형식: {self.value}")
+
+    def is_raw(self) -> bool:
+        """원본 데이터인지 판단한다."""
+        return "/raw/" in self.value
+
+    def is_processed(self) -> bool:
+        """전처리된 데이터인지 판단한다."""
+        return "/processed/" in self.value

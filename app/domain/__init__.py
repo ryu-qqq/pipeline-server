@@ -33,6 +33,7 @@ from app.domain.models import (
 from app.domain.value_objects import (
     Confidence,
     ObjectCount,
+    SourcePath,
     Temperature,
     VideoId,
     WiperState,
@@ -61,6 +62,7 @@ __all__ = [
     "SearchCriteria",
     "Selection",
     "SelectionParseError",
+    "SourcePath",
     "Stage",
     "StageResult",
     "Temperature",

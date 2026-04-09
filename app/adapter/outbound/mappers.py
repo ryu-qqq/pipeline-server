@@ -15,7 +15,7 @@ from app.domain.enums import (
     Weather,
 )
 from app.domain.models import Label, OddTag, Rejection, Selection
-from app.domain.value_objects import Confidence, ObjectCount, Temperature, VideoId, WiperState
+from app.domain.value_objects import Confidence, ObjectCount, SourcePath, Temperature, VideoId, WiperState
 
 
 class SelectionMapper:
@@ -28,7 +28,7 @@ class SelectionMapper:
             wiper_active=domain.wiper.active,
             wiper_level=domain.wiper.level,
             headlights_on=domain.headlights_on,
-            source_path=domain.source_path,
+            source_path=domain.source_path.value,
         )
 
     @staticmethod
@@ -39,7 +39,7 @@ class SelectionMapper:
             temperature=Temperature.from_celsius(entity.temperature_celsius),
             wiper=WiperState(active=entity.wiper_active, level=entity.wiper_level),
             headlights_on=entity.headlights_on,
-            source_path=entity.source_path,
+            source_path=SourcePath(entity.source_path),
         )
 
 

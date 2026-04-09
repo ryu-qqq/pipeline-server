@@ -58,7 +58,7 @@ class SearchResultResponseMapper:
             wiper_active=result.selection.wiper.active,
             wiper_level=result.selection.wiper.level,
             headlights_on=result.selection.headlights_on,
-            source_path=result.selection.source_path,
+            source_path=result.selection.source_path.value,
             weather=result.odd_tag.weather.value if result.odd_tag else None,
             time_of_day=result.odd_tag.time_of_day.value if result.odd_tag else None,
             road_surface=result.odd_tag.road_surface.value if result.odd_tag else None,

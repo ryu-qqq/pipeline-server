@@ -3,7 +3,7 @@ from datetime import datetime
 
 from app.domain.exceptions import UnknownSchemaError
 from app.domain.models import Selection
-from app.domain.value_objects import Temperature, VideoId, WiperState
+from app.domain.value_objects import SourcePath, Temperature, VideoId, WiperState
 
 
 class SelectionParser(ABC):
@@ -23,7 +23,7 @@ class V1SelectionParser(SelectionParser):
             temperature=Temperature.from_celsius(float(raw["temperature"])),
             wiper=WiperState(active=bool(raw["isWiperOn"])),
             headlights_on=bool(raw["headlightsOn"]),
-            source_path=raw["sourcePath"],
+            source_path=SourcePath(raw["sourcePath"]),
         )
 
 
@@ -51,7 +51,7 @@ class V2SelectionParser(SelectionParser):
                 level=int(sensor["wiper"]["level"]),
             ),
             headlights_on=bool(sensor["headlights"]),
-            source_path=raw["sourcePath"],
+            source_path=SourcePath(raw["sourcePath"]),
         )
 
 

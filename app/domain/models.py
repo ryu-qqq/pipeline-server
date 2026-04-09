@@ -12,6 +12,7 @@ from app.domain.enums import (
 from app.domain.value_objects import (
     Confidence,
     ObjectCount,
+    SourcePath,
     Temperature,
     VideoId,
     WiperState,
@@ -27,11 +28,7 @@ class Selection:
     temperature: Temperature
     wiper: WiperState
     headlights_on: bool
-    source_path: str
-
-    def __post_init__(self) -> None:
-        if not self.source_path:
-            raise ValueError("source_path는 비어있을 수 없습니다")
+    source_path: SourcePath
 
     def is_night_driving(self) -> bool:
         """야간 주행 여부를 센서 데이터로 판단한다."""
