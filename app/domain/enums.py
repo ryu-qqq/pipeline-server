@@ -47,6 +47,15 @@ class Stage(StrEnum):
     AUTO_LABELING = "auto_labeling"
 
 
+class TaskStatus(StrEnum):
+    """분석 작업 상태"""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class RejectionReason(StrEnum):
     """거부 사유"""
 

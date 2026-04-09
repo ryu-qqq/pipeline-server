@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from app.domain.enums import TaskStatus
 from app.domain.ports import AnalyzeTask, RawDataRepository, StageProgress, TaskDispatcher, TaskRepository
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class AnalysisService:
 
         task = AnalyzeTask(
             task_id=task_id,
-            status="pending",
+            status=TaskStatus.PENDING,
             selection_progress=StageProgress(total=sel_count),
             odd_tagging_progress=StageProgress(total=odd_count),
             auto_labeling_progress=StageProgress(total=label_count),

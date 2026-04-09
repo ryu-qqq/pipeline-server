@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.domain.enums import Stage, TaskStatus
 from app.domain.models import Label, OddTag, Rejection, RejectionCriteria, SearchCriteria, Selection
 
 # === MySQL Repository Ports ===
@@ -68,6 +69,9 @@ class RejectionRepository(ABC):
     def delete_all(self) -> None: ...
 
 
+# === 검색 결과 모델 ===
+
+
 @dataclass(frozen=True)
 class SearchResult:
     """검색 결과 한 건 (Selection + OddTag + Labels 통합)"""
@@ -100,12 +104,12 @@ class StageProgress:
         return round((self.processed + self.rejected) / self.total * 100, 1) if self.total > 0 else 0.0
 
 
-@dataclass
+@dataclass(frozen=True)
 class AnalyzeTask:
     """분석 작업 상태"""
 
     task_id: str
-    status: str  # pending, processing, completed, failed
+    status: TaskStatus
     selection_progress: StageProgress
     odd_tagging_progress: StageProgress
     auto_labeling_progress: StageProgress
@@ -144,10 +148,10 @@ class TaskRepository(ABC):
     def find_by_id(self, task_id: str) -> AnalyzeTask | None: ...
 
     @abstractmethod
-    def update_status(self, task_id: str, status: str) -> None: ...
+    def update_status(self, task_id: str, status: TaskStatus) -> None: ...
 
     @abstractmethod
-    def update_progress(self, task_id: str, stage: str, progress: StageProgress) -> None: ...
+    def update_progress(self, task_id: str, stage: Stage, progress: StageProgress) -> None: ...
 
     @abstractmethod
     def complete(self, task_id: str, result: dict) -> None: ...

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from app.application.parsers import detect_parser
 from app.application.validators import LabelValidator, OddValidator
-from app.domain.enums import RejectionReason, Stage
+from app.domain.enums import RejectionReason, Stage, TaskStatus
 from app.domain.models import Rejection, StageResult
 from app.domain.ports import (
     LabelRepository,
@@ -42,7 +42,7 @@ class PipelineService:
 
     def execute(self, task_id: str) -> None:
         """task_id에 해당하는 원본 데이터를 정제하여 MySQL에 적재한다."""
-        self._task_repo.update_status(task_id, "processing")
+        self._task_repo.update_status(task_id, TaskStatus.PROCESSING)
 
         try:
             # 기존 MySQL 데이터 초기화 (재분석 지원)
@@ -52,7 +52,7 @@ class PipelineService:
             sel_result = self._process_selections(task_id)
             self._task_repo.update_progress(
                 task_id,
-                "selection",
+                Stage.SELECTION,
                 StageProgress(total=sel_result.total, processed=sel_result.loaded, rejected=sel_result.rejected),
             )
 
@@ -61,7 +61,7 @@ class PipelineService:
             odd_result = self._process_odds(task_id, valid_selection_ids)
             self._task_repo.update_progress(
                 task_id,
-                "odd_tagging",
+                Stage.ODD_TAGGING,
                 StageProgress(total=odd_result.total, processed=odd_result.loaded, rejected=odd_result.rejected),
             )
 
@@ -69,7 +69,7 @@ class PipelineService:
             label_result = self._process_labels(task_id, valid_selection_ids)
             self._task_repo.update_progress(
                 task_id,
-                "auto_labeling",
+                Stage.AUTO_LABELING,
                 StageProgress(total=label_result.total, processed=label_result.loaded, rejected=label_result.rejected),
             )
 

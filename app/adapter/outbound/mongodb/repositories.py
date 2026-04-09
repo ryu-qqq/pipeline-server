@@ -4,6 +4,7 @@ from pymongo.database import Database
 
 from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, RawDataDocument
 from app.adapter.outbound.mongodb.mappers import TaskDocumentMapper
+from app.domain.enums import Stage, TaskStatus
 from app.domain.ports import AnalyzeTask, RawDataRepository, StageProgress, TaskRepository
 
 BULK_INSERT_SIZE = 5000
@@ -64,14 +65,14 @@ class MongoTaskRepository(TaskRepository):
         task_doc = AnalyzeTaskDocument.from_dict(doc)
         return TaskDocumentMapper.to_domain(task_doc)
 
-    def update_status(self, task_id: str, status: str) -> None:
-        self._collection.update_one({"_id": task_id}, {"$set": {"status": status}})
+    def update_status(self, task_id: str, status: TaskStatus) -> None:
+        self._collection.update_one({"_id": task_id}, {"$set": {"status": status.value}})
 
-    def update_progress(self, task_id: str, stage: str, progress: StageProgress) -> None:
+    def update_progress(self, task_id: str, stage: Stage, progress: StageProgress) -> None:
         progress_doc = TaskDocumentMapper.progress_to_document(progress)
         self._collection.update_one(
             {"_id": task_id},
-            {"$set": {f"progress.{stage}": progress_doc.to_dict()}},
+            {"$set": {f"progress.{stage.value}": progress_doc.to_dict()}},
         )
 
     def complete(self, task_id: str, result: dict) -> None:
@@ -79,7 +80,7 @@ class MongoTaskRepository(TaskRepository):
             {"_id": task_id},
             {
                 "$set": {
-                    "status": "completed",
+                    "status": TaskStatus.COMPLETED.value,
                     "result": result,
                     "completed_at": datetime.now(),
                 }
@@ -91,7 +92,7 @@ class MongoTaskRepository(TaskRepository):
             {"_id": task_id},
             {
                 "$set": {
-                    "status": "failed",
+                    "status": TaskStatus.FAILED.value,
                     "error": error,
                     "completed_at": datetime.now(),
                 }

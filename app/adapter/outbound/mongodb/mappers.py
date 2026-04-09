@@ -2,6 +2,7 @@ from app.adapter.outbound.mongodb.documents import (
     AnalyzeTaskDocument,
     StageProgressDocument,
 )
+from app.domain.enums import TaskStatus
 from app.domain.ports import AnalyzeTask, StageProgress
 
 
@@ -12,7 +13,7 @@ class TaskDocumentMapper:
     def to_document(domain: AnalyzeTask) -> AnalyzeTaskDocument:
         return AnalyzeTaskDocument(
             task_id=domain.task_id,
-            status=domain.status,
+            status=domain.status.value,
             selection_progress=StageProgressDocument(
                 total=domain.selection_progress.total,
                 processed=domain.selection_progress.processed,
@@ -38,7 +39,7 @@ class TaskDocumentMapper:
     def to_domain(doc: AnalyzeTaskDocument) -> AnalyzeTask:
         return AnalyzeTask(
             task_id=doc.task_id,
-            status=doc.status,
+            status=TaskStatus(doc.status),
             selection_progress=StageProgress(
                 total=doc.selection_progress.total,
                 processed=doc.selection_progress.processed,
