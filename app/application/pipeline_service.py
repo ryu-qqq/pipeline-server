@@ -5,7 +5,7 @@ from datetime import datetime
 from app.application.parsers import detect_parser
 from app.application.validators import LabelValidator, OddValidator
 from app.domain.enums import RejectionReason, Stage, TaskStatus
-from app.domain.models import AnalyzeTask, Rejection, StageProgress, StageResult
+from app.domain.models import AnalyzeTask, Rejection
 from app.domain.ports import (
     LabelRepository,
     OddTagRepository,
@@ -14,6 +14,7 @@ from app.domain.ports import (
     SelectionRepository,
     TaskRepository,
 )
+from app.domain.value_objects import StageProgress, StageResult
 
 logger = logging.getLogger(__name__)
 

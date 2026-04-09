@@ -10,8 +10,8 @@ from app.domain.models import (
     SearchCriteria,
     SearchResult,
     Selection,
-    StageProgress,
 )
+from app.domain.value_objects import StageProgress
 
 # === MySQL Repository Ports ===
 

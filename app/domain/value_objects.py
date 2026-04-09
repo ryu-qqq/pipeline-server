@@ -133,3 +133,25 @@ class SourcePath:
     def is_processed(self) -> bool:
         """전처리된 데이터인지 판단한다."""
         return "/processed/" in self.value
+
+
+@dataclass(frozen=True)
+class StageProgress:
+    """단계별 진행률"""
+
+    total: int = 0
+    processed: int = 0
+    rejected: int = 0
+
+    @property
+    def percent(self) -> float:
+        return round((self.processed + self.rejected) / self.total * 100, 1) if self.total > 0 else 0.0
+
+
+@dataclass(frozen=True)
+class StageResult:
+    """단계별 처리 결과"""
+
+    total: int
+    loaded: int
+    rejected: int

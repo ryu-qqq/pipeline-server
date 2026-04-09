@@ -14,6 +14,8 @@ from app.domain.value_objects import (
     Confidence,
     ObjectCount,
     SourcePath,
+    StageProgress,
+    StageResult,
     Temperature,
     VideoId,
     WiperState,
@@ -125,15 +127,6 @@ class SearchCriteria:
 
 
 @dataclass(frozen=True)
-class StageResult:
-    """단계별 처리 결과"""
-
-    total: int
-    loaded: int
-    rejected: int
-
-
-@dataclass(frozen=True)
 class AnalysisResult:
     """POST /analyze 응답용 분석 결과"""
 
@@ -157,19 +150,6 @@ class SearchResult:
 
 
 # === 분석 작업 모델 ===
-
-
-@dataclass(frozen=True)
-class StageProgress:
-    """단계별 진행률"""
-
-    total: int = 0
-    processed: int = 0
-    rejected: int = 0
-
-    @property
-    def percent(self) -> float:
-        return round((self.processed + self.rejected) / self.total * 100, 1) if self.total > 0 else 0.0
 
 
 @dataclass(frozen=True)
