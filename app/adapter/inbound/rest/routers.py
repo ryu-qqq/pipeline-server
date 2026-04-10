@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends
 from starlette.responses import JSONResponse
 
 from app.adapter.inbound.rest.mappers import (
+    DataSearchCriteriaMapper,
     RejectionCriteriaMapper,
     RejectionResponseMapper,
-    SearchCriteriaMapper,
     SearchResultResponseMapper,
     TaskResponseMapper,
 )
@@ -19,14 +19,14 @@ from app.adapter.inbound.rest.schemas import (
     TaskSubmitResponse,
 )
 from app.application.analysis_service import AnalysisService
-from app.application.rejection_service import RejectionService
-from app.application.search_service import SearchService
-from app.application.task_service import TaskService
+from app.application.rejection_read_service import RejectionReadService
+from app.application.data_read_service import DataReadService
+from app.application.task_read_service import TaskReadService
 from app.dependencies import (
     get_analysis_service,
-    get_rejection_service,
-    get_search_service,
-    get_task_service,
+    get_rejection_read_service,
+    get_data_read_service,
+    get_task_read_service,
 )
 from app.domain.enums import TaskStatus
 
@@ -49,7 +49,7 @@ def analyze(service: AnalysisService = Depends(get_analysis_service)):
 @router.get("/analyze/{task_id}", response_model=ApiResponse[TaskResponse])
 def get_task_status(
     task_id: str,
-    service: TaskService = Depends(get_task_service),
+    service: TaskReadService = Depends(get_task_read_service),
 ):
     """분석 작업의 진행 상태를 조회한다."""
     task = service.get_task(task_id)
@@ -59,7 +59,7 @@ def get_task_status(
 @router.get("/rejections", response_model=PageApiResponse[RejectionResponse])
 def get_rejections(
     request: RejectionSearchRequest = Depends(),
-    service: RejectionService = Depends(get_rejection_service),
+    service: RejectionReadService = Depends(get_rejection_read_service),
 ):
     """정제 과정에서 거부된 데이터 목록을 조회한다."""
     criteria = RejectionCriteriaMapper.to_domain(request)
@@ -68,13 +68,13 @@ def get_rejections(
     return PageApiResponse.of(items=items, total=total, page=request.page, size=request.size)
 
 
-@router.get("/search", response_model=PageApiResponse[SearchResultResponse])
-def search(
+@router.get("/data", response_model=PageApiResponse[SearchResultResponse])
+def search_data(
     request: DataSearchRequest = Depends(),
-    service: SearchService = Depends(get_search_service),
+    service: DataReadService = Depends(get_data_read_service),
 ):
     """학습 데이터를 조건에 맞게 검색한다."""
-    criteria = SearchCriteriaMapper.to_domain(request)
+    criteria = DataSearchCriteriaMapper.to_domain(request)
     results, total = service.search(criteria)
     items = [SearchResultResponseMapper.from_domain(r) for r in results]
     return PageApiResponse.of(items=items, total=total, page=request.page, size=request.size)

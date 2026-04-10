@@ -90,7 +90,7 @@ class TaskResponse(BaseModel):
     task_id: str
     status: str
     progress: TaskProgressResponse
-    result: dict | None = None
+    result: "AnalysisResponse | None" = None
     error: str | None = None
     created_at: datetime | None = None
     completed_at: datetime | None = None
@@ -107,21 +107,37 @@ class TaskSubmitResponse(BaseModel):
 class RejectionSearchRequest(BaseModel):
     """GET /rejections 조회 요청"""
 
+    task_id: str | None = None
     stage: Stage | None = None
     reason: RejectionReason | None = None
+    source_id: str | None = None
+    field: str | None = None
     page: int = Field(1, ge=1)
     size: int = Field(20, ge=1, le=100)
 
 
 class DataSearchRequest(BaseModel):
-    """GET /search 검색 요청"""
+    """GET /data 검색 요청"""
 
+    task_id: str | None = None
+
+    # Selection 조건
+    recorded_at_from: datetime | None = None
+    recorded_at_to: datetime | None = None
+    min_temperature: float | None = None
+    max_temperature: float | None = None
+    headlights_on: bool | None = None
+
+    # ODD 조건
     weather: Weather | None = None
     time_of_day: TimeOfDay | None = None
     road_surface: RoadSurface | None = None
+
+    # Label 조건
     object_class: ObjectClass | None = None
     min_obj_count: int | None = Field(None, ge=0)
     min_confidence: float | None = Field(None, ge=0.0, le=1.0)
+
     page: int = Field(1, ge=1)
     size: int = Field(20, ge=1, le=100)
 
@@ -144,11 +160,11 @@ class AnalysisResponse(BaseModel):
 
 
 class RejectionResponse(BaseModel):
-    record_identifier: str
     stage: str
     reason: str
+    source_id: str
+    field: str
     detail: str
-    raw_data: str | None = None
     created_at: datetime | None = None
 
 
@@ -170,3 +186,7 @@ class SearchResultResponse(BaseModel):
     time_of_day: str | None = None
     road_surface: str | None = None
     labels: list[LabelResponse] = Field(default_factory=list)
+
+
+# Forward reference 해결 (TaskResponse가 AnalysisResponse보다 먼저 정의됨)
+TaskResponse.model_rebuild()

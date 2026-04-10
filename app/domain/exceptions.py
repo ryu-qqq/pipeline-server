@@ -84,6 +84,13 @@ class DuplicateRecordError(DomainError):
     message = "중복된 레코드입니다"
 
 
+class ConflictError(DomainError):
+    """이미 진행 중인 작업이 존재"""
+
+    error_code = "CONFLICT"
+    message = "이미 진행 중인 작업이 있습니다"
+
+
 class DataNotFoundError(DomainError):
     """데이터 미존재"""
 

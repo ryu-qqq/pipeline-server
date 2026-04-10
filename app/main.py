@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from app.adapter.inbound.rest.routers import router
 from app.adapter.inbound.rest.schemas import ProblemDetail
 from app.adapter.outbound.mysql.database import create_tables
-from app.domain.exceptions import DomainError
+from app.domain.exceptions import ConflictError, DomainError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +31,23 @@ def on_startup() -> None:
 
 
 # === 글로벌 예외 핸들러 (= Spring @RestControllerAdvice) ===
+
+
+@app.exception_handler(ConflictError)
+async def conflict_error_handler(request: Request, exc: ConflictError) -> JSONResponse:
+    """중복 요청 (409)"""
+    logger.warning("ConflictError: code=%s, message=%s, path=%s", exc.error_code, exc.message, request.url.path)
+    return JSONResponse(
+        status_code=409,
+        content=ProblemDetail(
+            title="Conflict",
+            status=409,
+            detail=exc.message,
+            code=exc.error_code,
+            instance=str(request.url.path),
+        ).model_dump(),
+        headers={"x-error-code": exc.error_code},
+    )
 
 
 @app.exception_handler(DomainError)

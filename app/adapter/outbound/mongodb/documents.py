@@ -110,6 +110,7 @@ class OutboxDocument:
     retry_count: int = 0
     max_retries: int = 3
     created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
 
     def to_dict(self) -> dict:
         return {
@@ -120,10 +121,12 @@ class OutboxDocument:
             "retry_count": self.retry_count,
             "max_retries": self.max_retries,
             "created_at": self.created_at,
+            "updated_at": self.updated_at,
         }
 
     @classmethod
     def from_dict(cls, doc: dict) -> "OutboxDocument":
+        now = datetime.now()
         return cls(
             message_id=doc["_id"],
             message_type=doc["message_type"],
@@ -131,5 +134,6 @@ class OutboxDocument:
             status=doc.get("status", OutboxStatus.PENDING.value),
             retry_count=doc.get("retry_count", 0),
             max_retries=doc.get("max_retries", 3),
-            created_at=doc.get("created_at", datetime.now()),
+            created_at=doc.get("created_at", now),
+            updated_at=doc.get("updated_at", now),
         )

@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from datetime import datetime
 
 from pymongo.database import Database
@@ -5,19 +6,20 @@ from pymongo.database import Database
 from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, OutboxDocument, RawDataDocument
 from app.adapter.outbound.mongodb.mappers import OutboxDocumentMapper, TaskDocumentMapper
 from app.adapter.outbound.mongodb.transaction import get_current_session
-from app.domain.enums import OutboxStatus, Stage, TaskStatus
-from app.domain.models import AnalyzeTask, OutboxMessage
+from app.domain.enums import Stage, TaskStatus
+from app.domain.models import AnalyzeTask, OutboxCriteria, OutboxMessage
 from app.domain.ports import OutboxRepository, RawDataRepository, TaskRepository
 from app.domain.value_objects import StageProgress
 
-BULK_INSERT_SIZE = 5000
+DEFAULT_BULK_INSERT_SIZE = 5000
 
 
 class MongoRawDataRepository(RawDataRepository):
     """MongoDB 원본 데이터 저장소 구현체"""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, bulk_insert_size: int = DEFAULT_BULK_INSERT_SIZE) -> None:
         self._collection = db.raw_data
+        self._bulk_insert_size = bulk_insert_size
 
     def save_raw_selections(self, task_id: str, raw_list: list[dict]) -> int:
         return self._bulk_save(task_id, "selections", raw_list)
@@ -28,12 +30,13 @@ class MongoRawDataRepository(RawDataRepository):
     def save_raw_labels(self, task_id: str, rows: list[dict]) -> int:
         return self._bulk_save(task_id, "labels", rows)
 
-    def find_by_task_and_source(self, task_id: str, source: str) -> list[dict]:
+    def find_by_task_and_source(self, task_id: str, source: str) -> Iterator[dict]:
         cursor = self._collection.find(
             {"task_id": task_id, "source": source},
             {"_id": 0, "data": 1},
         )
-        return [doc["data"] for doc in cursor]
+        for doc in cursor:
+            yield doc["data"]
 
     def delete_by_task(self, task_id: str) -> None:
         self._collection.delete_many({"task_id": task_id}, session=get_current_session())
@@ -41,8 +44,8 @@ class MongoRawDataRepository(RawDataRepository):
     def _bulk_save(self, task_id: str, source: str, items: list[dict]) -> int:
         total = 0
         now = datetime.now()
-        for i in range(0, len(items), BULK_INSERT_SIZE):
-            chunk = items[i : i + BULK_INSERT_SIZE]
+        for i in range(0, len(items), self._bulk_insert_size):
+            chunk = items[i : i + self._bulk_insert_size]
             docs = [
                 RawDataDocument(task_id=task_id, source=source, data=item, created_at=now).to_dict() for item in chunk
             ]
@@ -57,9 +60,14 @@ class MongoTaskRepository(TaskRepository):
     def __init__(self, db: Database) -> None:
         self._collection = db.analyze_tasks
 
-    def create(self, task: AnalyzeTask) -> None:
+    def save(self, task: AnalyzeTask) -> None:
         document = TaskDocumentMapper.to_document(task)
-        self._collection.insert_one(document.to_dict(), session=get_current_session())
+        self._collection.replace_one(
+            {"_id": task.task_id},
+            document.to_dict(),
+            upsert=True,
+            session=get_current_session(),
+        )
 
     def find_by_id(self, task_id: str) -> AnalyzeTask | None:
         doc = self._collection.find_one({"_id": task_id})
@@ -68,49 +76,15 @@ class MongoTaskRepository(TaskRepository):
         task_doc = AnalyzeTaskDocument.from_dict(doc)
         return TaskDocumentMapper.to_domain(task_doc)
 
-    def update_status(self, task_id: str, status: TaskStatus) -> None:
-        self._collection.update_one({"_id": task_id}, {"$set": {"status": status.value}}, session=get_current_session())
-
-    def update_progress(self, task_id: str, stage: Stage, progress: StageProgress) -> None:
-        progress_doc = TaskDocumentMapper.progress_to_document(progress)
-        self._collection.update_one(
-            {"_id": task_id},
-            {"$set": {f"progress.{stage.value}": progress_doc.to_dict()}},
-            session=get_current_session(),
+    def find_by_statuses(self, statuses: list[TaskStatus]) -> AnalyzeTask | None:
+        doc = self._collection.find_one(
+            {"status": {"$in": [s.value for s in statuses]}},
+            sort=[("created_at", -1)],
         )
-
-    def complete(self, task_id: str, result: dict) -> None:
-        self._collection.update_one(
-            {"_id": task_id},
-            {
-                "$set": {
-                    "status": TaskStatus.COMPLETED.value,
-                    "result": result,
-                    "completed_at": datetime.now(),
-                }
-            },
-            session=get_current_session(),
-        )
-
-    def fail(self, task_id: str, error: str) -> None:
-        self._collection.update_one(
-            {"_id": task_id},
-            {
-                "$set": {
-                    "status": TaskStatus.FAILED.value,
-                    "error": error,
-                    "completed_at": datetime.now(),
-                }
-            },
-            session=get_current_session(),
-        )
-
-    def update_last_completed_phase(self, task_id: str, phase: Stage) -> None:
-        self._collection.update_one(
-            {"_id": task_id},
-            {"$set": {"last_completed_phase": phase.value}},
-            session=get_current_session(),
-        )
+        if not doc:
+            return None
+        task_doc = AnalyzeTaskDocument.from_dict(doc)
+        return TaskDocumentMapper.to_domain(task_doc)
 
 
 class MongoOutboxRepository(OutboxRepository):
@@ -121,40 +95,21 @@ class MongoOutboxRepository(OutboxRepository):
 
     def save(self, message: OutboxMessage) -> None:
         document = OutboxDocumentMapper.to_document(message)
-        self._collection.insert_one(document.to_dict(), session=get_current_session())
+        self._collection.replace_one(
+            {"_id": message.message_id},
+            document.to_dict(),
+            upsert=True,
+            session=get_current_session(),
+        )
 
-    def find_pending(self, limit: int = 10) -> list[OutboxMessage]:
+    def find_by(self, criteria: OutboxCriteria) -> list[OutboxMessage]:
+        query: dict = {"status": criteria.status.value}
+        if criteria.before is not None:
+            query["updated_at"] = {"$lt": criteria.before}
+
         cursor = (
-            self._collection.find(
-                {"status": OutboxStatus.PENDING.value},
-            )
+            self._collection.find(query)
             .sort("created_at", 1)
-            .limit(limit)
+            .limit(criteria.limit)
         )
-
-        results = []
-        for doc in cursor:
-            outbox_doc = OutboxDocument.from_dict(doc)
-            results.append(OutboxDocumentMapper.to_domain(outbox_doc))
-        return results
-
-    def mark_published(self, message_id: str) -> None:
-        self._collection.update_one(
-            {"_id": message_id},
-            {"$set": {"status": OutboxStatus.PUBLISHED.value}},
-            session=get_current_session(),
-        )
-
-    def mark_failed(self, message_id: str) -> None:
-        self._collection.update_one(
-            {"_id": message_id},
-            {"$set": {"status": OutboxStatus.FAILED.value}},
-            session=get_current_session(),
-        )
-
-    def increment_retry(self, message_id: str) -> None:
-        self._collection.update_one(
-            {"_id": message_id},
-            {"$inc": {"retry_count": 1}},
-            session=get_current_session(),
-        )
+        return [OutboxDocumentMapper.to_domain(OutboxDocument.from_dict(doc)) for doc in cursor]

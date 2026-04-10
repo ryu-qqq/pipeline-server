@@ -26,14 +26,5 @@ class RedisCacheRepository(CacheRepository):
         serialized = self._serializer.serialize(data)
         self._client.setex(key, ttl, serialized)
 
-    def invalidate_pattern(self, pattern: str) -> None:
-        keys = self._client.keys(pattern)
-        if keys:
-            self._client.delete(*keys)
-
-    @staticmethod
-    def build_search_key(conditions: dict) -> str:
-        """검색 조건을 hash하여 캐시 키를 생성한다."""
-        sorted_str = json.dumps(conditions, sort_keys=True, default=str)
-        hash_val = hashlib.md5(sorted_str.encode()).hexdigest()
-        return f"search:{hash_val}"
+    def invalidate_all(self) -> None:
+        self._client.flushdb()

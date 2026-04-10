@@ -26,7 +26,7 @@ from app.domain.models import (
     OddTag,
     Rejection,
     RejectionCriteria,
-    SearchCriteria,
+    DataSearchCriteria,
     Selection,
     StageResult,
 )
@@ -59,7 +59,7 @@ __all__ = [
     "RejectionCriteria",
     "RejectionReason",
     "RoadSurface",
-    "SearchCriteria",
+    "DataSearchCriteria",
     "Selection",
     "SelectionParseError",
     "SourcePath",

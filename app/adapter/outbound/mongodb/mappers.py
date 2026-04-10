@@ -3,9 +3,11 @@ from app.adapter.outbound.mongodb.documents import (
     OutboxDocument,
     StageProgressDocument,
 )
+import dataclasses
+
 from app.domain.enums import OutboxStatus, Stage, TaskStatus
-from app.domain.models import AnalyzeTask, OutboxMessage
-from app.domain.value_objects import StageProgress
+from app.domain.models import AnalysisResult, AnalyzeTask, OutboxMessage
+from app.domain.value_objects import StageProgress, StageResult
 
 
 class TaskDocumentMapper:
@@ -32,7 +34,7 @@ class TaskDocumentMapper:
                 rejected=domain.auto_labeling_progress.rejected,
             ),
             last_completed_phase=domain.last_completed_phase.value if domain.last_completed_phase else None,
-            result=domain.result,
+            result=dataclasses.asdict(domain.result) if domain.result else None,
             error=domain.error,
             created_at=domain.created_at,
             completed_at=domain.completed_at,
@@ -59,10 +61,23 @@ class TaskDocumentMapper:
                 rejected=doc.auto_labeling_progress.rejected,
             ),
             last_completed_phase=Stage(doc.last_completed_phase) if doc.last_completed_phase else None,
-            result=doc.result,
+            result=TaskDocumentMapper._to_analysis_result(doc.result) if doc.result else None,
             error=doc.error,
             created_at=doc.created_at,
             completed_at=doc.completed_at,
+        )
+
+    @staticmethod
+    def _to_analysis_result(data: dict) -> AnalysisResult:
+        def _to_stage_result(d: dict) -> StageResult:
+            return StageResult(total=d["total"], loaded=d["loaded"], rejected=d["rejected"])
+
+        return AnalysisResult(
+            selection=_to_stage_result(data["selection"]),
+            odd_tagging=_to_stage_result(data["odd_tagging"]),
+            auto_labeling=_to_stage_result(data["auto_labeling"]),
+            fully_linked=data["fully_linked"],
+            partial=data["partial"],
         )
 
     @staticmethod
@@ -87,6 +102,7 @@ class OutboxDocumentMapper:
             retry_count=domain.retry_count,
             max_retries=domain.max_retries,
             created_at=domain.created_at,
+            updated_at=domain.updated_at,
         )
 
     @staticmethod
@@ -99,4 +115,5 @@ class OutboxDocumentMapper:
             retry_count=doc.retry_count,
             max_retries=doc.max_retries,
             created_at=doc.created_at,
+            updated_at=doc.updated_at,
         )

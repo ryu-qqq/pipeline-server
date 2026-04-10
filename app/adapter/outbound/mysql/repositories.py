@@ -1,6 +1,6 @@
 from itertools import islice
 
-from sqlalchemy import delete, select
+from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
 from app.adapter.outbound.mysql.entities import (
@@ -15,107 +15,109 @@ from app.adapter.outbound.mysql.mappers import (
     RejectionMapper,
     SelectionMapper,
 )
-from app.adapter.outbound.mysql.query_builder import RejectionQueryBuilder, SearchQueryBuilder
-from app.domain.models import Label, OddTag, Rejection, RejectionCriteria, SearchCriteria, Selection
+from app.adapter.outbound.mysql.query_builder import RejectionQueryBuilder, DataSearchQueryBuilder
+from app.domain.models import Label, OddTag, Rejection, RejectionCriteria, DataSearchCriteria, SearchResult, Selection
 from app.domain.ports import (
     LabelRepository,
     OddTagRepository,
     RejectionRepository,
-    SearchRepository,
-    SearchResult,
+    DataSearchRepository,
     SelectionRepository,
 )
 
-CHUNK_SIZE = 1000
+DEFAULT_CHUNK_SIZE = 1000
 
 
 def _chunked(iterable: list, size: int):
-    """리스트를 size 단위로 분할하여 yield한다."""
     it = iter(iterable)
     while chunk := list(islice(it, size)):
         yield chunk
 
 
 class SqlSelectionRepository(SelectionRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, chunk_size: int = DEFAULT_CHUNK_SIZE) -> None:
         self._session = session
+        self._chunk_size = chunk_size
 
-    def save_all(self, selections: list[Selection]) -> None:
-        for chunk in _chunked(selections, CHUNK_SIZE):
-            entities = [SelectionMapper.to_entity(s) for s in chunk]
-            self._session.add_all(entities)
+    def save_all(self, selections: list[Selection]) -> int:
+        total_inserted = 0
+        for chunk in _chunked(selections, self._chunk_size):
+            values = [SelectionMapper.to_dict(s) for s in chunk]
+            stmt = insert(SelectionEntity).prefix_with("IGNORE").values(values)
+            result = self._session.execute(stmt)
             self._session.flush()
+            total_inserted += result.rowcount
+        return total_inserted
 
     def find_by_id(self, selection_id: int) -> Selection | None:
         entity = self._session.get(SelectionEntity, selection_id)
         return SelectionMapper.to_domain(entity) if entity else None
 
-    def find_all_ids(self) -> set[int]:
-        stmt = select(SelectionEntity.id)
+    def find_all_ids_by_task(self, task_id: str) -> set[int]:
+        stmt = select(SelectionEntity.id).where(SelectionEntity.task_id == task_id)
         result = self._session.execute(stmt)
         return {row[0] for row in result}
 
-    def delete_all(self) -> None:
-        self._session.execute(delete(SelectionEntity))
-        self._session.flush()
-
 
 class SqlOddTagRepository(OddTagRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, chunk_size: int = DEFAULT_CHUNK_SIZE) -> None:
         self._session = session
+        self._chunk_size = chunk_size
 
-    def save_all(self, odd_tags: list[OddTag]) -> None:
-        for chunk in _chunked(odd_tags, CHUNK_SIZE):
-            entities = [OddTagMapper.to_entity(o) for o in chunk]
-            self._session.add_all(entities)
+    def save_all(self, odd_tags: list[OddTag]) -> int:
+        total_inserted = 0
+        for chunk in _chunked(odd_tags, self._chunk_size):
+            values = [OddTagMapper.to_dict(o) for o in chunk]
+            stmt = insert(OddTagEntity).prefix_with("IGNORE").values(values)
+            result = self._session.execute(stmt)
             self._session.flush()
+            total_inserted += result.rowcount
+        return total_inserted
 
     def find_by_video_id(self, video_id: int) -> OddTag | None:
         stmt = select(OddTagEntity).where(OddTagEntity.video_id == video_id)
         entity = self._session.execute(stmt).scalar_one_or_none()
         return OddTagMapper.to_domain(entity) if entity else None
 
-    def find_all_video_ids(self) -> set[int]:
-        stmt = select(OddTagEntity.video_id)
+    def find_all_video_ids_by_task(self, task_id: str) -> set[int]:
+        stmt = select(OddTagEntity.video_id).where(OddTagEntity.task_id == task_id)
         result = self._session.execute(stmt)
         return {row[0] for row in result}
 
-    def delete_all(self) -> None:
-        self._session.execute(delete(OddTagEntity))
-        self._session.flush()
-
 
 class SqlLabelRepository(LabelRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, chunk_size: int = DEFAULT_CHUNK_SIZE) -> None:
         self._session = session
+        self._chunk_size = chunk_size
 
-    def save_all(self, labels: list[Label]) -> None:
-        for chunk in _chunked(labels, CHUNK_SIZE):
-            entities = [LabelMapper.to_entity(lb) for lb in chunk]
-            self._session.add_all(entities)
+    def save_all(self, labels: list[Label]) -> int:
+        total_inserted = 0
+        for chunk in _chunked(labels, self._chunk_size):
+            values = [LabelMapper.to_dict(lb) for lb in chunk]
+            stmt = insert(LabelEntity).prefix_with("IGNORE").values(values)
+            result = self._session.execute(stmt)
             self._session.flush()
+            total_inserted += result.rowcount
+        return total_inserted
 
     def find_all_by_video_id(self, video_id: int) -> list[Label]:
         stmt = select(LabelEntity).where(LabelEntity.video_id == video_id)
         entities = self._session.execute(stmt).scalars().all()
         return [LabelMapper.to_domain(e) for e in entities]
 
-    def find_all_video_ids(self) -> set[int]:
-        stmt = select(LabelEntity.video_id).distinct()
+    def find_all_video_ids_by_task(self, task_id: str) -> set[int]:
+        stmt = select(LabelEntity.video_id).where(LabelEntity.task_id == task_id).distinct()
         result = self._session.execute(stmt)
         return {row[0] for row in result}
 
-    def delete_all(self) -> None:
-        self._session.execute(delete(LabelEntity))
-        self._session.flush()
-
 
 class SqlRejectionRepository(RejectionRepository):
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, chunk_size: int = DEFAULT_CHUNK_SIZE) -> None:
         self._session = session
+        self._chunk_size = chunk_size
 
     def save_all(self, rejections: list[Rejection]) -> None:
-        for chunk in _chunked(rejections, CHUNK_SIZE):
+        for chunk in _chunked(rejections, self._chunk_size):
             entities = [RejectionMapper.to_entity(r) for r in chunk]
             self._session.add_all(entities)
             self._session.flush()
@@ -128,17 +130,13 @@ class SqlRejectionRepository(RejectionRepository):
 
         return [RejectionMapper.to_domain(e) for e in entities], total
 
-    def delete_all(self) -> None:
-        self._session.execute(delete(RejectionEntity))
-        self._session.flush()
 
-
-class SqlSearchRepository(SearchRepository):
+class SqlDataDataSearchRepository(DataSearchRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def search(self, criteria: SearchCriteria) -> tuple[list[SearchResult], int]:
-        builder = SearchQueryBuilder(criteria)
+    def search(self, criteria: DataSearchCriteria) -> tuple[list[SearchResult], int]:
+        builder = DataSearchQueryBuilder(criteria)
 
         total = self._session.execute(builder.build_count_query()).scalar() or 0
         selection_entities = self._session.execute(builder.build_query()).scalars().all()

@@ -15,18 +15,17 @@ from app.adapter.outbound.mysql.repositories import (
     SqlLabelRepository,
     SqlOddTagRepository,
     SqlRejectionRepository,
-    SqlSearchRepository,
+    SqlDataDataSearchRepository,
     SqlSelectionRepository,
 )
 from app.adapter.outbound.redis.client import get_redis
 from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.analysis_service import AnalysisService
-from app.application.analyze_task_factory import AnalyzeTaskFactory
 from app.application.data_ingestor import DataIngestor
 from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
-from app.application.rejection_service import RejectionService
-from app.application.search_service import SearchService
-from app.application.task_service import TaskService
+from app.application.rejection_read_service import RejectionReadService
+from app.application.data_read_service import DataReadService
+from app.application.task_read_service import TaskReadService
 from app.domain.enums import FileType
 from app.domain.ports import (
     CacheRepository,
@@ -36,7 +35,7 @@ from app.domain.ports import (
     OutboxRepository,
     RawDataRepository,
     RejectionRepository,
-    SearchRepository,
+    DataSearchRepository,
     SelectionRepository,
     TaskRepository,
     TransactionManager,
@@ -85,8 +84,8 @@ def get_rejection_repo(session: Session = Depends(get_db_session)) -> RejectionR
     return SqlRejectionRepository(session)
 
 
-def get_search_repo(session: Session = Depends(get_db_session)) -> SearchRepository:
-    return SqlSearchRepository(session)
+def get_search_repo(session: Session = Depends(get_db_session)) -> DataSearchRepository:
+    return SqlDataDataSearchRepository(session)
 
 
 # === MongoDB Repository ===
@@ -159,48 +158,38 @@ def get_data_ingestor(
     )
 
 
-# === Factory ===
-
-
-def get_analyze_task_factory(
-    id_generator: IdGenerator = Depends(get_id_generator),
-) -> AnalyzeTaskFactory:
-    return AnalyzeTaskFactory(id_generator=id_generator)
-
-
 # === Service ===
 
 
 def get_analysis_service(
     data_ingestor: DataIngestor = Depends(get_data_ingestor),
-    task_factory: AnalyzeTaskFactory = Depends(get_analyze_task_factory),
+    id_generator: IdGenerator = Depends(get_id_generator),
     task_repo: TaskRepository = Depends(get_task_repo),
     outbox_repo: OutboxRepository = Depends(get_outbox_repo),
     tx_manager: TransactionManager = Depends(get_tx_manager),
 ) -> AnalysisService:
     return AnalysisService(
         data_ingestor=data_ingestor,
-        task_factory=task_factory,
+        id_generator=id_generator,
         task_repo=task_repo,
         outbox_repo=outbox_repo,
         tx_manager=tx_manager,
     )
 
 
-def get_task_service(
+def get_task_read_service(
     task_repo: TaskRepository = Depends(get_task_repo),
-) -> TaskService:
-    return TaskService(task_repo=task_repo)
+) -> TaskReadService:
+    return TaskReadService(task_repo=task_repo)
 
 
-def get_rejection_service(
+def get_rejection_read_service(
     rejection_repo: RejectionRepository = Depends(get_rejection_repo),
-) -> RejectionService:
-    return RejectionService(rejection_repo=rejection_repo)
+) -> RejectionReadService:
+    return RejectionReadService(rejection_repo=rejection_repo)
 
 
-def get_search_service(
-    search_repo: SearchRepository = Depends(get_search_repo),
-    cache_repo: CacheRepository = Depends(get_cache_repo),
-) -> SearchService:
-    return SearchService(search_repo=search_repo, cache_repo=cache_repo)
+def get_data_read_service(
+    search_repo: DataSearchRepository = Depends(get_search_repo),
+) -> DataReadService:
+    return DataReadService(search_repo=search_repo)

@@ -3,7 +3,7 @@ from app.domain.models import AnalyzeTask
 from app.domain.ports import TaskRepository
 
 
-class TaskService:
+class TaskReadService:
     """분석 작업 상태 조회 서비스 (Query)"""
 
     def __init__(self, task_repo: TaskRepository) -> None:

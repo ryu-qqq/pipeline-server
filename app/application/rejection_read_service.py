@@ -2,7 +2,7 @@ from app.domain.models import Rejection, RejectionCriteria
 from app.domain.ports import RejectionRepository
 
 
-class RejectionService:
+class RejectionReadService:
     """거부 데이터 조회 서비스 (Query)"""
 
     def __init__(self, rejection_repo: RejectionRepository) -> None:

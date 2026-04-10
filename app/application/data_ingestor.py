@@ -9,7 +9,7 @@ from app.domain.value_objects import IngestionResult
 
 logger = logging.getLogger(__name__)
 
-CHUNK_SIZE = 5000
+DEFAULT_CHUNK_SIZE = 5000
 
 
 class DataIngestor:
@@ -21,11 +21,13 @@ class DataIngestor:
         raw_data_repo: RawDataRepository,
         loader_provider: FileLoaderProvider,
         data_dir: Path,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
     ) -> None:
         self._id_generator = id_generator
         self._raw_data_repo = raw_data_repo
         self._loader_provider = loader_provider
         self._data_dir = data_dir
+        self._chunk_size = chunk_size
 
     def ingest(self) -> IngestionResult:
         """3개 파일을 청크 단위로 MongoDB에 적재한다."""
@@ -72,7 +74,7 @@ class DataIngestor:
         total = 0
         it = iter(records)
         while True:
-            chunk = list(itertools.islice(it, CHUNK_SIZE))
+            chunk = list(itertools.islice(it, self._chunk_size))
             if not chunk:
                 break
             total += save_fn(task_id, chunk)

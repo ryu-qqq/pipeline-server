@@ -1,15 +1,16 @@
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from app.domain.enums import Stage, TaskStatus
 from app.domain.models import (
     AnalyzeTask,
     Label,
     OddTag,
+    OutboxCriteria,
     OutboxMessage,
     Rejection,
     RejectionCriteria,
-    SearchCriteria,
+    DataSearchCriteria,
     SearchResult,
     Selection,
 )
@@ -22,48 +23,45 @@ class SelectionRepository(ABC):
     """Selection 저장소 포트 (MySQL)"""
 
     @abstractmethod
-    def save_all(self, selections: list[Selection]) -> None: ...
+    def save_all(self, selections: list[Selection]) -> int:
+        """INSERT IGNORE로 저장하고 실제 적재 건수를 반환한다."""
+        ...
 
     @abstractmethod
     def find_by_id(self, selection_id: int) -> Selection | None: ...
 
     @abstractmethod
-    def find_all_ids(self) -> set[int]: ...
-
-    @abstractmethod
-    def delete_all(self) -> None: ...
+    def find_all_ids_by_task(self, task_id: str) -> set[int]: ...
 
 
 class OddTagRepository(ABC):
     """ODD 태깅 저장소 포트 (MySQL)"""
 
     @abstractmethod
-    def save_all(self, odd_tags: list[OddTag]) -> None: ...
+    def save_all(self, odd_tags: list[OddTag]) -> int:
+        """INSERT IGNORE로 저장하고 실제 적재 건수를 반환한다."""
+        ...
 
     @abstractmethod
     def find_by_video_id(self, video_id: int) -> OddTag | None: ...
 
     @abstractmethod
-    def find_all_video_ids(self) -> set[int]: ...
-
-    @abstractmethod
-    def delete_all(self) -> None: ...
+    def find_all_video_ids_by_task(self, task_id: str) -> set[int]: ...
 
 
 class LabelRepository(ABC):
     """자동 라벨링 저장소 포트 (MySQL)"""
 
     @abstractmethod
-    def save_all(self, labels: list[Label]) -> None: ...
+    def save_all(self, labels: list[Label]) -> int:
+        """INSERT IGNORE로 저장하고 실제 적재 건수를 반환한다."""
+        ...
 
     @abstractmethod
     def find_all_by_video_id(self, video_id: int) -> list[Label]: ...
 
     @abstractmethod
-    def find_all_video_ids(self) -> set[int]: ...
-
-    @abstractmethod
-    def delete_all(self) -> None: ...
+    def find_all_video_ids_by_task(self, task_id: str) -> set[int]: ...
 
 
 class RejectionRepository(ABC):
@@ -75,15 +73,12 @@ class RejectionRepository(ABC):
     @abstractmethod
     def search(self, criteria: RejectionCriteria) -> tuple[list[Rejection], int]: ...
 
-    @abstractmethod
-    def delete_all(self) -> None: ...
 
-
-class SearchRepository(ABC):
+class DataSearchRepository(ABC):
     """학습 데이터 검색 포트 (MySQL)"""
 
     @abstractmethod
-    def search(self, criteria: SearchCriteria) -> tuple[list[SearchResult], int]: ...
+    def search(self, criteria: DataSearchCriteria) -> tuple[list[SearchResult], int]: ...
 
 
 # === MongoDB Repository Ports ===
@@ -102,57 +97,50 @@ class RawDataRepository(ABC):
     def save_raw_labels(self, task_id: str, rows: list[dict]) -> int: ...
 
     @abstractmethod
-    def find_by_task_and_source(self, task_id: str, source: str) -> list[dict]: ...
+    def find_by_task_and_source(self, task_id: str, source: str) -> Iterator[dict]: ...
 
     @abstractmethod
     def delete_by_task(self, task_id: str) -> None: ...
 
 
 class TaskRepository(ABC):
-    """분석 작업 상태 저장소 포트 (MongoDB)"""
+    """분석 작업 상태 저장소 포트 (MongoDB)
+
+    Repository는 저장/조회만 수행한다.
+    상태 전이는 도메인 객체(AnalyzeTask)가 담당한다.
+    """
 
     @abstractmethod
-    def create(self, task: AnalyzeTask) -> None: ...
+    def save(self, task: AnalyzeTask) -> None:
+        """도메인 객체를 저장한다. 이미 존재하면 덮어쓴다 (upsert)."""
+        ...
 
     @abstractmethod
     def find_by_id(self, task_id: str) -> AnalyzeTask | None: ...
 
     @abstractmethod
-    def update_status(self, task_id: str, status: TaskStatus) -> None: ...
-
-    @abstractmethod
-    def update_progress(self, task_id: str, stage: Stage, progress: StageProgress) -> None: ...
-
-    @abstractmethod
-    def complete(self, task_id: str, result: dict) -> None: ...
-
-    @abstractmethod
-    def fail(self, task_id: str, error: str) -> None: ...
-
-    @abstractmethod
-    def update_last_completed_phase(self, task_id: str, phase: Stage) -> None: ...
+    def find_by_statuses(self, statuses: list[TaskStatus]) -> AnalyzeTask | None:
+        """주어진 상태 중 하나에 해당하는 가장 최근 작업을 반환한다."""
+        ...
 
 
 # === Outbox Port ===
 
 
 class OutboxRepository(ABC):
-    """Outbox 메시지 저장소 포트 (MongoDB)"""
+    """Outbox 메시지 저장소 포트 (MongoDB)
+
+    Repository는 저장/조회만 수행한다.
+    상태 전이는 도메인 객체(OutboxMessage)가 담당한다.
+    """
 
     @abstractmethod
-    def save(self, message: OutboxMessage) -> None: ...
+    def save(self, message: OutboxMessage) -> None:
+        """도메인 객체를 저장한다. 이미 존재하면 덮어쓴다 (upsert)."""
+        ...
 
     @abstractmethod
-    def find_pending(self, limit: int = 10) -> list[OutboxMessage]: ...
-
-    @abstractmethod
-    def mark_published(self, message_id: str) -> None: ...
-
-    @abstractmethod
-    def mark_failed(self, message_id: str) -> None: ...
-
-    @abstractmethod
-    def increment_retry(self, message_id: str) -> None: ...
+    def find_by(self, criteria: "OutboxCriteria") -> list[OutboxMessage]: ...
 
 
 # === Transaction Port ===
@@ -201,4 +189,6 @@ class CacheRepository(ABC):
     def set(self, key: str, data: dict, ttl: int) -> None: ...
 
     @abstractmethod
-    def invalidate_pattern(self, pattern: str) -> None: ...
+    def invalidate_all(self) -> None:
+        """모든 캐시를 무효화한다."""
+        ...

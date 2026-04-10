@@ -60,6 +60,7 @@ class OutboxStatus(StrEnum):
     """Outbox 메시지 상태"""
 
     PENDING = "pending"
+    PROCESSING = "processing"
     PUBLISHED = "published"
     FAILED = "failed"
 

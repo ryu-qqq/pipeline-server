@@ -10,7 +10,7 @@ from app.adapter.inbound.rest.schemas import (
     TaskProgressResponse,
     TaskResponse,
 )
-from app.domain.models import AnalysisResult, AnalyzeTask, Rejection, RejectionCriteria, SearchCriteria, SearchResult
+from app.domain.models import AnalysisResult, AnalyzeTask, DataSearchCriteria, Rejection, RejectionCriteria, SearchResult
 
 
 class AnalysisResponseMapper:
@@ -41,11 +41,11 @@ class RejectionResponseMapper:
     @staticmethod
     def from_domain(rejection: Rejection) -> RejectionResponse:
         return RejectionResponse(
-            record_identifier=rejection.record_identifier,
             stage=rejection.stage.value,
             reason=rejection.reason.value,
+            source_id=rejection.source_id,
+            field=rejection.field,
             detail=rejection.detail,
-            raw_data=rejection.raw_data,
             created_at=rejection.created_at,
         )
 
@@ -79,17 +79,26 @@ class RejectionCriteriaMapper:
     @staticmethod
     def to_domain(request: RejectionSearchRequest) -> RejectionCriteria:
         return RejectionCriteria(
+            task_id=request.task_id,
             stage=request.stage,
             reason=request.reason,
+            source_id=request.source_id,
+            field=request.field,
             page=request.page,
             size=request.size,
         )
 
 
-class SearchCriteriaMapper:
+class DataSearchCriteriaMapper:
     @staticmethod
-    def to_domain(request: DataSearchRequest) -> SearchCriteria:
-        return SearchCriteria(
+    def to_domain(request: DataSearchRequest) -> DataSearchCriteria:
+        return DataSearchCriteria(
+            task_id=request.task_id,
+            recorded_at_from=request.recorded_at_from,
+            recorded_at_to=request.recorded_at_to,
+            min_temperature=request.min_temperature,
+            max_temperature=request.max_temperature,
+            headlights_on=request.headlights_on,
             weather=request.weather,
             time_of_day=request.time_of_day,
             road_surface=request.road_surface,
@@ -127,7 +136,7 @@ class TaskResponseMapper:
                     percent=task.auto_labeling_progress.percent,
                 ),
             ),
-            result=task.result,
+            result=AnalysisResponseMapper.from_domain(task.result) if task.result else None,
             error=task.error,
             created_at=task.created_at,
             completed_at=task.completed_at,

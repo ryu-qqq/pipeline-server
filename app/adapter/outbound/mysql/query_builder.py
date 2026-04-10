@@ -6,20 +6,21 @@ from app.adapter.outbound.mysql.entities import (
     RejectionEntity,
     SelectionEntity,
 )
-from app.domain.models import RejectionCriteria, SearchCriteria
+from app.domain.models import DataSearchCriteria, RejectionCriteria
 
 
-class SearchQueryBuilder:
+class DataSearchQueryBuilder:
     """학습 데이터 검색 쿼리 빌더
 
-    동적 조건(ODD + Label)을 조합하여 SELECT/COUNT 쿼리를 생성한다.
+    동적 조건(Selection + ODD + Label)을 조합하여 SELECT/COUNT 쿼리를 생성한다.
     """
 
-    def __init__(self, criteria: SearchCriteria) -> None:
+    def __init__(self, criteria: DataSearchCriteria) -> None:
         self._criteria = criteria
 
     def build_query(self) -> Select:
         stmt = select(SelectionEntity)
+        stmt = self._apply_selection_conditions(stmt)
         stmt = self._apply_odd_conditions(stmt)
         stmt = self._apply_label_conditions(stmt)
         stmt = self._apply_pagination(stmt)
@@ -27,8 +28,25 @@ class SearchQueryBuilder:
 
     def build_count_query(self) -> Select:
         stmt = select(func.count()).select_from(SelectionEntity)
+        stmt = self._apply_selection_conditions(stmt)
         stmt = self._apply_odd_conditions(stmt)
         stmt = self._apply_label_conditions(stmt)
+        return stmt
+
+    def _apply_selection_conditions(self, stmt: Select) -> Select:
+        c = self._criteria
+        if c.task_id is not None:
+            stmt = stmt.where(SelectionEntity.task_id == c.task_id)
+        if c.recorded_at_from is not None:
+            stmt = stmt.where(SelectionEntity.recorded_at >= c.recorded_at_from)
+        if c.recorded_at_to is not None:
+            stmt = stmt.where(SelectionEntity.recorded_at <= c.recorded_at_to)
+        if c.min_temperature is not None:
+            stmt = stmt.where(SelectionEntity.temperature_celsius >= c.min_temperature)
+        if c.max_temperature is not None:
+            stmt = stmt.where(SelectionEntity.temperature_celsius <= c.max_temperature)
+        if c.headlights_on is not None:
+            stmt = stmt.where(SelectionEntity.headlights_on == c.headlights_on)
         return stmt
 
     def _apply_odd_conditions(self, stmt: Select) -> Select:
@@ -74,7 +92,7 @@ class SearchQueryBuilder:
 class RejectionQueryBuilder:
     """거부 데이터 조회 쿼리 빌더
 
-    stage, reason 필터 조건을 동적으로 조합한다.
+    task_id, stage, reason 필터 조건을 동적으로 조합한다.
     """
 
     def __init__(self, criteria: RejectionCriteria) -> None:
@@ -93,10 +111,16 @@ class RejectionQueryBuilder:
 
     def _apply_filters(self, stmt: Select) -> Select:
         c = self._criteria
+        if c.task_id is not None:
+            stmt = stmt.where(RejectionEntity.task_id == c.task_id)
         if c.stage is not None:
             stmt = stmt.where(RejectionEntity.stage == c.stage.value)
         if c.reason is not None:
             stmt = stmt.where(RejectionEntity.reason == c.reason.value)
+        if c.source_id is not None:
+            stmt = stmt.where(RejectionEntity.source_id == c.source_id)
+        if c.field is not None:
+            stmt = stmt.where(RejectionEntity.field == c.field)
         return stmt
 
     def _apply_pagination(self, stmt: Select) -> Select:
