@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 CHUNK_SIZE = 5000
 
 
-class IngestionService:
+class DataIngestor:
     """파일 적재 서비스 — ID 생성 + 파일 읽기 → MongoDB 적재 (적재 책임)"""
 
     def __init__(

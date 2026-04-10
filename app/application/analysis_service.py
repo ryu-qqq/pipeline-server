@@ -1,8 +1,8 @@
 import logging
 
 from app.application.analyze_task_factory import AnalyzeTaskFactory
+from app.application.data_ingestor import DataIngestor
 from app.application.decorators import transactional
-from app.application.ingestion_service import IngestionService
 from app.domain.ports import OutboxRepository, TaskRepository, TransactionManager
 
 logger = logging.getLogger(__name__)
@@ -13,13 +13,13 @@ class AnalysisService:
 
     def __init__(
         self,
-        ingestion_service: IngestionService,
+        data_ingestor: DataIngestor,
         task_factory: AnalyzeTaskFactory,
         task_repo: TaskRepository,
         outbox_repo: OutboxRepository,
         tx_manager: TransactionManager,
     ) -> None:
-        self._ingestion_service = ingestion_service
+        self._data_ingestor = data_ingestor
         self._task_factory = task_factory
         self._task_repo = task_repo
         self._outbox_repo = outbox_repo
@@ -32,7 +32,7 @@ class AnalysisService:
         @transactional: 적재 + Task 저장 + Outbox 저장을
         하나의 트랜잭션으로 묶어 부분 실패 시 전체 롤백을 보장한다.
         """
-        ingestion = self._ingestion_service.ingest()
+        ingestion = self._data_ingestor.ingest()
         bundle = self._task_factory.create(ingestion)
 
         self._task_repo.create(bundle.task)

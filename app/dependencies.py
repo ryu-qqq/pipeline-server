@@ -22,8 +22,8 @@ from app.adapter.outbound.redis.client import get_redis
 from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.analysis_service import AnalysisService
 from app.application.analyze_task_factory import AnalyzeTaskFactory
+from app.application.data_ingestor import DataIngestor
 from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
-from app.application.ingestion_service import IngestionService
 from app.application.rejection_service import RejectionService
 from app.application.search_service import SearchService
 from app.application.task_service import TaskService
@@ -146,12 +146,12 @@ def get_loader_provider() -> FileLoaderProvider:
 # === Ingestion Service ===
 
 
-def get_ingestion_service(
+def get_data_ingestor(
     id_generator: IdGenerator = Depends(get_id_generator),
     raw_data_repo: RawDataRepository = Depends(get_raw_data_repo),
     loader_provider: FileLoaderProvider = Depends(get_loader_provider),
-) -> IngestionService:
-    return IngestionService(
+) -> DataIngestor:
+    return DataIngestor(
         id_generator=id_generator,
         raw_data_repo=raw_data_repo,
         loader_provider=loader_provider,
@@ -172,14 +172,14 @@ def get_analyze_task_factory(
 
 
 def get_analysis_service(
-    ingestion_service: IngestionService = Depends(get_ingestion_service),
+    data_ingestor: DataIngestor = Depends(get_data_ingestor),
     task_factory: AnalyzeTaskFactory = Depends(get_analyze_task_factory),
     task_repo: TaskRepository = Depends(get_task_repo),
     outbox_repo: OutboxRepository = Depends(get_outbox_repo),
     tx_manager: TransactionManager = Depends(get_tx_manager),
 ) -> AnalysisService:
     return AnalysisService(
-        ingestion_service=ingestion_service,
+        data_ingestor=data_ingestor,
         task_factory=task_factory,
         task_repo=task_repo,
         outbox_repo=outbox_repo,
