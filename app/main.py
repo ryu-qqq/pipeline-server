@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,19 +17,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    create_tables()
+    from app.adapter.outbound.mongodb.client import ensure_indexes
+    ensure_indexes()
+    yield
+
+
 app = FastAPI(
     title="Pipeline Server",
     description="자율주행 영상 데이터 정제·분석 파이프라인 API",
     version="1.0.0",
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    create_tables()
-    from app.adapter.outbound.mongodb.client import ensure_indexes
-
-    ensure_indexes()
 
 
 # === 글로벌 예외 핸들러 (= Spring @RestControllerAdvice) ===

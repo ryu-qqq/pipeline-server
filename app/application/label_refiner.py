@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.domain.enums import ObjectClass, RejectionReason, Stage
+from app.domain.exceptions import NegativeCountError
 from app.domain.models import Label, Rejection
 from app.domain.value_objects import Confidence, ObjectCount, VideoId
 
@@ -59,7 +60,7 @@ class LabelRefiner:
             return None
         try:
             return ObjectCount(int(raw))
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError, NegativeCountError) as e:
             rejections.append(self._reject(task_id, source_id, "obj_count", RejectionReason.NEGATIVE_OBJ_COUNT, str(e), now))
             return None
 
