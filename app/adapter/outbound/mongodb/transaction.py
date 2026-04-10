@@ -25,11 +25,7 @@ def get_current_session() -> ClientSession | None:
 
 
 class MongoTransactionManager(TransactionManager):
-    """MongoDB Replica Set 트랜잭션 관리 구현체.
-
-    fn 내부에서 호출되는 모든 MongoDB Repository 작업이
-    하나의 트랜잭션으로 묶인다.
-    """
+    """MongoDB Replica Set 트랜잭션 관리 구현체."""
 
     def __init__(self, client: MongoClient) -> None:
         self._client = client

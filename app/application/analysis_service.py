@@ -1,6 +1,7 @@
 import logging
 
 from app.application.analyze_task_factory import AnalyzeTaskFactory
+from app.application.decorators import transactional
 from app.application.ingestion_service import IngestionService
 from app.domain.ports import OutboxRepository, TaskRepository, TransactionManager
 
@@ -24,26 +25,18 @@ class AnalysisService:
         self._outbox_repo = outbox_repo
         self._tx_manager = tx_manager
 
+    @transactional
     def submit(self) -> str:
         """3개 파일을 MongoDB에 적재하고 Outbox에 이벤트를 저장한다.
 
-        적재 + Task 생성 + Outbox 저장을 하나의 트랜잭션으로 묶어
-        부분 실패 시 전체 롤백을 보장한다.
+        @transactional: 적재 + Task 저장 + Outbox 저장을
+        하나의 트랜잭션으로 묶어 부분 실패 시 전체 롤백을 보장한다.
         """
-        ingestion = None
-        bundle = None
+        ingestion = self._ingestion_service.ingest()
+        bundle = self._task_factory.create(ingestion)
 
-        def _atomic() -> None:
-            nonlocal ingestion, bundle
-            # 1. 적재 (IngestionService — ID 생성 + 파일 → MongoDB)
-            ingestion = self._ingestion_service.ingest()
-            # 2. 생성 (Factory — 순수 객체 조립, 저장소 모름)
-            bundle = self._task_factory.create(ingestion)
-            # 3. 저장 (같은 MongoDB에 순서대로)
-            self._task_repo.create(bundle.task)
-            self._outbox_repo.save(bundle.outbox)
-
-        self._tx_manager.execute(_atomic)
+        self._task_repo.create(bundle.task)
+        self._outbox_repo.save(bundle.outbox)
 
         logger.info("분석 접수: task_id=%s", ingestion.task_id)
         return ingestion.task_id
