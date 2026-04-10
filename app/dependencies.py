@@ -15,7 +15,7 @@ from app.adapter.outbound.mysql.repositories import (
     SqlLabelRepository,
     SqlOddTagRepository,
     SqlRejectionRepository,
-    SqlDataDataSearchRepository,
+    SqlDataSearchRepository,
     SqlSelectionRepository,
 )
 from app.adapter.outbound.redis.client import get_redis
@@ -85,7 +85,7 @@ def get_rejection_repo(session: Session = Depends(get_db_session)) -> RejectionR
 
 
 def get_search_repo(session: Session = Depends(get_db_session)) -> DataSearchRepository:
-    return SqlDataDataSearchRepository(session)
+    return SqlDataSearchRepository(session)
 
 
 # === MongoDB Repository ===
@@ -131,14 +131,10 @@ def get_id_generator() -> IdGenerator:
 # === FileLoader Provider ===
 
 
-REQUIRED_ODD_HEADERS = {"id", "video_id", "weather", "time_of_day", "road_surface"}
-REQUIRED_LABEL_HEADERS = {"video_id", "object_class", "obj_count", "avg_confidence", "labeled_at"}
-
-
 def get_loader_provider() -> FileLoaderProvider:
     provider = FileLoaderProvider()
     provider.register(FileType.JSON, JsonFileLoader())
-    provider.register(FileType.CSV, CsvFileLoader(REQUIRED_ODD_HEADERS | REQUIRED_LABEL_HEADERS))
+    provider.register(FileType.CSV, CsvFileLoader())
     return provider
 
 

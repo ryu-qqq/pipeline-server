@@ -131,7 +131,7 @@ class SqlRejectionRepository(RejectionRepository):
         return [RejectionMapper.to_domain(e) for e in entities], total
 
 
-class SqlDataDataSearchRepository(DataSearchRepository):
+class SqlDataSearchRepository(DataSearchRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
 

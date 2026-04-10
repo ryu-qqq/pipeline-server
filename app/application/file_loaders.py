@@ -36,10 +36,10 @@ class JsonFileLoader(FileLoader):
 
 
 class CsvFileLoader(FileLoader):
-    """CSV 파일 로더 -- 스트리밍으로 한 건씩 yield (메모리에 안 올림)"""
+    """CSV 파일 로더 -- 스트리밍으로 한 건씩 yield (메모리에 안 올림)
 
-    def __init__(self, required_headers: set[str]) -> None:
-        self._required_headers = required_headers
+    필드 검증은 Refiner에서 수행하므로, 로더는 파싱만 담당한다.
+    """
 
     def load(self, path: Path) -> Iterator[RawData]:
         try:
@@ -48,15 +48,7 @@ class CsvFileLoader(FileLoader):
             raise DataNotFoundError(f"파일을 찾을 수 없습니다: {path}") from err
 
         with f:
-            reader = csv.DictReader(f)
-
-            if reader.fieldnames is not None:
-                actual_headers = set(reader.fieldnames)
-                missing = self._required_headers - actual_headers
-                if missing:
-                    raise InvalidFormatError(f"CSV 필수 헤더 누락: {path} -- {sorted(missing)}")
-
-            yield from reader
+            yield from csv.DictReader(f)
 
 
 class FileLoaderProvider:
