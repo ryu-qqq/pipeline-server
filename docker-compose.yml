@@ -23,19 +23,14 @@ services:
   mongodb:
     image: mongo:7.0
     container_name: pipeline-mongodb
-    command: ["--replSet", "rs0"]
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: pipeline
-      MONGO_INITDB_ROOT_PASSWORD: pipeline
-      MONGO_INITDB_DATABASE: pipeline
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
     healthcheck:
       test: >
-        mongosh --username pipeline --password pipeline --authenticationDatabase admin
-        --eval "try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongodb:27017'}]}).ok }"
+        mongosh --eval "try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongodb:27017'}]}).ok }"
       interval: 5s
       timeout: 10s
       retries: 10
@@ -61,7 +56,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: mysql+pymysql://pipeline:pipeline@mysql:3306/pipeline?charset=utf8mb4
-      MONGO_URL: mongodb://pipeline:pipeline@mongodb:27017/pipeline?authSource=admin&replicaSet=rs0
+      MONGO_URL: mongodb://mongodb:27017/pipeline?replicaSet=rs0
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       DATA_DIR: /app/data
@@ -81,7 +76,7 @@ services:
     command: celery -A app.worker worker --loglevel=info --concurrency=2 -B
     environment:
       DATABASE_URL: mysql+pymysql://pipeline:pipeline@mysql:3306/pipeline?charset=utf8mb4
-      MONGO_URL: mongodb://pipeline:pipeline@mongodb:27017/pipeline?authSource=admin&replicaSet=rs0
+      MONGO_URL: mongodb://mongodb:27017/pipeline?replicaSet=rs0
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       DATA_DIR: /app/data
