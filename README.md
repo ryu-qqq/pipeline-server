@@ -68,6 +68,20 @@ docker compose down -v
 
 ---
 
+## 설계 과정
+
+데이터를 먼저 분석하고, 분석 결과를 토대로 모델링과 아키텍처를 결정했습니다.
+
+| 단계 | 산출물 | 설명 |
+|---|---|---|
+| 1. 데이터 탐색 | [`notebooks/data-analysis.ipynb`](notebooks/data-analysis.ipynb) | Jupyter Notebook으로 3개 파일의 스키마 변형, 노이즈 패턴, 중복, ID 관계를 시각화 |
+| 2. 분석 결과 정리 | [`docs/data-analysis.md`](docs/data-analysis.md) | V1/V2 스키마 비율, 온도 단위 불일치, 거부 사유 분류 체계 도출 |
+| 3. 데이터 모델 설계 | [`docs/data-model.md`](docs/data-model.md) | ERD, 인덱스 설계, MongoDB 컬렉션 구조, Enum 허용값 |
+| 4. 아키텍처 설계 | [`docs/architecture.md`](docs/architecture.md) | DDD + Hexagonal, 데이터 흐름, Polyglot Persistence, 비동기 파이프라인 |
+| 5. 테스트 전략 | [`docs/testing-strategy.md`](docs/testing-strategy.md) | 테스트 피라미드, 레이어별 전략, 커버리지 분석 |
+
+---
+
 ## 기술 스택 선택 이유
 
 | 기술 | 선택 이유 |
