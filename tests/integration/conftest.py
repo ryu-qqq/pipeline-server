@@ -367,7 +367,7 @@ def client(db_session, mongo_db, redis_client, mongo_client):
     )
     from app.adapter.outbound.redis.repositories import RedisCacheRepository
     from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
-    from app.dependencies import (
+    from app.rest_dependencies import (
         get_cache_repo,
         get_db,
         get_db_session,

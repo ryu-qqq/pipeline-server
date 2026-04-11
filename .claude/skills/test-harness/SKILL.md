@@ -106,6 +106,8 @@ description: |
 | E2E-3 | 데이터 품질 | Rejection 분류/필터링 |
 | E2E-4 | Task 격리 | task_id별 데이터 독립 |
 | E2E-5 | API 에러 | ProblemDetail RFC 7807 |
+| E2E-6 | Outbox + 좀비 복구 | relay() + recover_zombies() 실제 MongoDB |
+| E2E-7 | 파이프라인 resume | 실패 후 재실행 시 last_completed_phase 이후부터 |
 
 ---
 

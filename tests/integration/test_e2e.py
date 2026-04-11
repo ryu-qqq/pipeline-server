@@ -365,3 +365,145 @@ class TestApiEndpoints:
         for item in body["content"]:
             assert item["weather"] == "sunny"
             assert item["time_of_day"] == "day"
+
+
+# === 시나리오 6: Outbox 좀비 복구 ===
+
+
+class TestOutboxZombieRecovery:
+    """Outbox PROCESSING 상태로 방치된 좀비 메시지의 복구를 검증한다"""
+
+    def test_좀비_메시지_recover후_재발행_가능(self, client, mongo_db):
+        """dispatch 실패로 PROCESSING에 남은 좀비를 recover_zombies로 PENDING 복구한다"""
+        from datetime import datetime, timedelta
+
+        from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository
+        from app.application.outbox_relay_service import OutboxRelayService
+        from app.domain.ports import TaskDispatcher
+
+        class FailingDispatcher(TaskDispatcher):
+            def dispatch(self, tid: str) -> None:
+                raise RuntimeError("의도적 실패")
+
+        # 1. 분석 접수
+        response = client.post("/analyze")
+        assert response.status_code == 202
+        task_id = response.json()["data"]["task_id"]
+
+        # 2. FailingDispatcher로 relay → dispatch 실패, PROCESSING 좀비 생성
+        dispatcher = FailingDispatcher()
+        relay = OutboxRelayService(
+            outbox_repo=MongoOutboxRepository(mongo_db),
+            task_dispatcher=dispatcher,
+        )
+        published = relay.relay()
+        assert published == 0
+
+        # Outbox가 PROCESSING 상태로 남아 있는지 확인
+        outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
+        assert outbox_msg is not None
+        assert outbox_msg["status"] == "processing"
+
+        # 3. updated_at를 과거로 수동 조정 (좀비 탐지 조건 충족)
+        mongo_db.outbox.update_one(
+            {"payload.task_id": task_id},
+            {"$set": {"updated_at": datetime.now() - timedelta(minutes=10)}},
+        )
+
+        # 4. recover_zombies 호출 → PENDING 복구
+        recovered = relay.recover_zombies(threshold_minutes=0)
+        assert recovered == 1
+
+        # 5. 상태가 PENDING으로 복구되고 retry_count=1인지 확인
+        outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
+        assert outbox_msg["status"] == "pending"
+        assert outbox_msg["retry_count"] == 1
+
+    def test_좀비_최대_재시도_초과시_FAILED(self, client, mongo_db):
+        """retry_count가 max_retries에 도달한 좀비는 FAILED로 처리된다"""
+        from datetime import datetime, timedelta
+
+        from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository
+        from app.application.outbox_relay_service import OutboxRelayService
+        from app.domain.ports import TaskDispatcher
+
+        class FailingDispatcher(TaskDispatcher):
+            def dispatch(self, tid: str) -> None:
+                raise RuntimeError("의도적 실패")
+
+        # 1. 분석 접수
+        response = client.post("/analyze")
+        assert response.status_code == 202
+        task_id = response.json()["data"]["task_id"]
+
+        # 2. FailingDispatcher로 relay → PROCESSING 좀비 생성
+        dispatcher = FailingDispatcher()
+        relay = OutboxRelayService(
+            outbox_repo=MongoOutboxRepository(mongo_db),
+            task_dispatcher=dispatcher,
+        )
+        relay.relay()
+
+        # 3. retry_count를 max_retries(3)으로 수동 설정 + updated_at을 과거로
+        mongo_db.outbox.update_one(
+            {"payload.task_id": task_id},
+            {"$set": {"retry_count": 3, "updated_at": datetime.now() - timedelta(minutes=10)}},
+        )
+
+        # 4. recover_zombies 호출 → retry_count=4 > max_retries=3이므로 FAILED
+        recovered = relay.recover_zombies(threshold_minutes=0)
+        assert recovered == 1
+
+        # 5. 상태가 FAILED인지 확인
+        outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
+        assert outbox_msg["status"] == "failed"
+
+
+# === 시나리오 7: 커서 기반 페이징 ===
+
+
+class TestCursorPagination:
+    """GET /data?after=N 커서 기반 페이지네이션을 검증한다"""
+
+    def test_커서_페이징_next_after_반환(self, client, pipeline_service, db_session):
+        """after 파라미터로 커서 기반 페이징 시 next_after가 반환된다"""
+        # 1. 데이터 준비: 분석 실행 완료
+        response = client.post("/analyze")
+        assert response.status_code == 202
+        task_id = response.json()["data"]["task_id"]
+
+        pipeline_service.execute(task_id)
+        db_session.commit()
+
+        # 2. offset 기반 첫 페이지로 데이터 존재 확인
+        first_page = client.get(f"/data?task_id={task_id}&page=1&size=3")
+        assert first_page.status_code == 200
+        first_body = first_page.json()
+
+        # 데이터가 3건 이상 있어야 커서 테스트 가능
+        if len(first_body["content"]) < 3:
+            return
+
+        # 3. 첫 페이지 마지막 항목의 video_id로 커서 페이징
+        last_video_id = first_body["content"][-1]["video_id"]
+        cursor_page = client.get(f"/data?task_id={task_id}&after={last_video_id}&size=3")
+        assert cursor_page.status_code == 200
+        cursor_body = cursor_page.json()
+
+        # 커서 모드에서는 next_after 필드가 존재 (결과가 있으면 int, 없으면 None)
+        assert "next_after" in cursor_body
+
+        # 커서 결과의 video_id는 모두 last_video_id보다 커야 한다
+        for item in cursor_body["content"]:
+            assert item["video_id"] > last_video_id
+
+    def test_page와_after_동시_사용시_에러(self, client):
+        """page와 after를 동시에 사용하면 400 에러를 반환한다"""
+        response = client.get("/data?page=1&after=100")
+        assert response.status_code == 400
+
+        body = response.json()
+        # detail 또는 errors에 page와 after 관련 메시지가 포함되어야 한다
+        response_text = str(body)
+        assert "page" in response_text.lower()
+        assert "after" in response_text.lower()

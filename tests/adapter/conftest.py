@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.adapter.outbound.mysql.database import Base
-from app.dependencies import (
+from app.rest_dependencies import (
     get_analysis_service,
     get_data_read_service,
     get_rejection_read_service,
