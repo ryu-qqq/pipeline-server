@@ -22,11 +22,11 @@ from app.domain.exceptions import (
 )
 from app.domain.models import (
     AnalysisResult,
+    DataSearchCriteria,
     Label,
     OddTag,
     Rejection,
     RejectionCriteria,
-    DataSearchCriteria,
     Selection,
     StageResult,
 )
@@ -43,6 +43,7 @@ __all__ = [
     "AnalysisResult",
     "Confidence",
     "DataNotFoundError",
+    "DataSearchCriteria",
     "DomainError",
     "DuplicateRecordError",
     "FractionalCountError",
@@ -59,7 +60,6 @@ __all__ = [
     "RejectionCriteria",
     "RejectionReason",
     "RoadSurface",
-    "DataSearchCriteria",
     "Selection",
     "SelectionParseError",
     "SourcePath",

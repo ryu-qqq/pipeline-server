@@ -1,20 +1,19 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 
-from app.domain.enums import Stage, TaskStatus
+from app.domain.enums import TaskStatus
 from app.domain.models import (
     AnalyzeTask,
+    DataSearchCriteria,
     Label,
     OddTag,
     OutboxCriteria,
     OutboxMessage,
     Rejection,
     RejectionCriteria,
-    DataSearchCriteria,
     SearchResult,
     Selection,
 )
-from app.domain.value_objects import StageProgress
 
 # === MySQL Repository Ports ===
 
@@ -123,6 +122,15 @@ class TaskRepository(ABC):
         """주어진 상태 중 하나에 해당하는 가장 최근 작업을 반환한다."""
         ...
 
+    @abstractmethod
+    def create_if_not_active(self, task: AnalyzeTask) -> None:
+        """활성(PENDING/PROCESSING) 작업이 없을 때만 생성한다.
+
+        이미 활성 작업이 있으면 ConflictError를 던진다.
+        구현체는 원자적 체크를 보장해야 한다.
+        """
+        ...
+
 
 # === Outbox Port ===
 
@@ -176,19 +184,3 @@ class IdGenerator(ABC):
     def generate(self) -> str: ...
 
 
-# === Redis Cache Ports ===
-
-
-class CacheRepository(ABC):
-    """캐시 저장소 포트 (Redis)"""
-
-    @abstractmethod
-    def get(self, key: str) -> dict | None: ...
-
-    @abstractmethod
-    def set(self, key: str, data: dict, ttl: int) -> None: ...
-
-    @abstractmethod
-    def invalidate_all(self) -> None:
-        """모든 캐시를 무효화한다."""
-        ...

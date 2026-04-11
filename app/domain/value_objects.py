@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 from app.domain.exceptions import (
@@ -40,6 +41,8 @@ class Temperature:
     celsius: float
 
     def __post_init__(self) -> None:
+        if not isinstance(self.celsius, (int, float)) or math.isnan(self.celsius) or math.isinf(self.celsius):
+            raise TemperatureConversionError(f"유효하지 않은 온도값: {self.celsius}")
         if self.celsius < -90 or self.celsius > 60:
             raise TemperatureConversionError(f"온도 범위 초과 (-90~60°C): {self.celsius}")
 
@@ -49,6 +52,8 @@ class Temperature:
 
     @classmethod
     def from_fahrenheit(cls, value: float) -> "Temperature":
+        if not isinstance(value, (int, float)) or math.isnan(value) or math.isinf(value):
+            raise TemperatureConversionError(f"유효하지 않은 화씨 온도: {value}")
         celsius = (value - 32) * 5 / 9
         return cls(celsius=round(celsius, 2))
 
@@ -60,6 +65,8 @@ class Confidence:
     value: float
 
     def __post_init__(self) -> None:
+        if not isinstance(self.value, (int, float)) or math.isnan(self.value) or math.isinf(self.value):
+            raise InvalidFormatError(f"유효하지 않은 신뢰도: {self.value}")
         if not (0.0 <= self.value <= 1.0):
             raise InvalidFormatError(f"신뢰도는 0.0~1.0 범위여야 합니다: {self.value}")
 

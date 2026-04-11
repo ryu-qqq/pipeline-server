@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.domain.enums import RejectionReason, Stage
-from app.domain.exceptions import DomainError, UnknownSchemaError
+from app.domain.exceptions import DomainError
 from app.domain.models import Rejection, Selection
 from app.domain.value_objects import SourcePath, Temperature, VideoId, WiperState
 

@@ -13,6 +13,7 @@ from app.domain.enums import (
     TimeOfDay,
     Weather,
 )
+from app.domain.exceptions import InvalidFormatError, InvalidOddTagError
 from app.domain.value_objects import (
     Confidence,
     ObjectCount,
@@ -59,7 +60,7 @@ class OddTag:
 
     def __post_init__(self) -> None:
         if self.id <= 0:
-            raise ValueError(f"id는 양수여야 합니다: {self.id}")
+            raise InvalidOddTagError(f"id는 양수여야 합니다: {self.id}")
 
     def is_hazardous(self) -> bool:
         """위험 주행 환경인지 판단한다."""
@@ -108,9 +109,9 @@ class Rejection:
 
     def __post_init__(self) -> None:
         if not self.source_id:
-            raise ValueError("source_id는 비어있을 수 없습니다")
+            raise InvalidFormatError("source_id는 비어있을 수 없습니다")
         if not self.detail:
-            raise ValueError("detail은 비어있을 수 없습니다")
+            raise InvalidFormatError("detail은 비어있을 수 없습니다")
 
 
 @dataclass(frozen=True)

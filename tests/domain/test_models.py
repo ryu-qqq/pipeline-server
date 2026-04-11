@@ -13,6 +13,7 @@ from app.domain.enums import (
     TimeOfDay,
     Weather,
 )
+from app.domain.exceptions import InvalidFormatError, InvalidOddTagError
 from app.domain.models import (
     AnalysisResult,
     AnalyzeTask,
@@ -32,7 +33,6 @@ from app.domain.value_objects import (
     VideoId,
     WiperState,
 )
-
 
 # === 테스트 픽스처 ===
 
@@ -115,11 +115,11 @@ class TestOddTag:
         assert tag.id == 1
 
     def test_zero_id_rejected(self):
-        with pytest.raises(ValueError, match="양수"):
+        with pytest.raises(InvalidOddTagError, match="양수"):
             _make_odd_tag(id=0)
 
     def test_negative_id_rejected(self):
-        with pytest.raises(ValueError, match="양수"):
+        with pytest.raises(InvalidOddTagError, match="양수"):
             _make_odd_tag(id=-1)
 
     def test_is_hazardous_icy(self):
@@ -181,7 +181,7 @@ class TestRejection:
         assert r.source_id == "src-1"
 
     def test_empty_source_id_rejected(self):
-        with pytest.raises(ValueError, match="source_id"):
+        with pytest.raises(InvalidFormatError, match="source_id"):
             Rejection(
                 task_id="task-001",
                 stage=Stage.SELECTION,
@@ -193,7 +193,7 @@ class TestRejection:
             )
 
     def test_empty_detail_rejected(self):
-        with pytest.raises(ValueError, match="detail"):
+        with pytest.raises(InvalidFormatError, match="detail"):
             Rejection(
                 task_id="task-001",
                 stage=Stage.SELECTION,

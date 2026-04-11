@@ -15,7 +15,6 @@ from app.domain.value_objects import (
     WiperState,
 )
 
-
 # === VideoId ===
 
 
@@ -81,6 +80,26 @@ class TestTemperature:
         with pytest.raises(TemperatureConversionError):
             Temperature.from_fahrenheit(-200)
 
+    def test_nan_rejected(self):
+        with pytest.raises(TemperatureConversionError, match="유효하지 않은 온도값"):
+            Temperature(celsius=float("nan"))
+
+    def test_infinity_rejected(self):
+        with pytest.raises(TemperatureConversionError, match="유효하지 않은 온도값"):
+            Temperature(celsius=float("inf"))
+
+    def test_negative_infinity_rejected(self):
+        with pytest.raises(TemperatureConversionError, match="유효하지 않은 온도값"):
+            Temperature(celsius=float("-inf"))
+
+    def test_from_fahrenheit_nan_rejected(self):
+        with pytest.raises(TemperatureConversionError, match="유효하지 않은 화씨"):
+            Temperature.from_fahrenheit(float("nan"))
+
+    def test_from_fahrenheit_infinity_rejected(self):
+        with pytest.raises(TemperatureConversionError, match="유효하지 않은 화씨"):
+            Temperature.from_fahrenheit(float("inf"))
+
 
 # === Confidence ===
 
@@ -111,6 +130,14 @@ class TestConfidence:
 
     def test_is_low_custom_threshold(self):
         assert Confidence(0.49).is_low(threshold=0.5) is True
+
+    def test_nan_rejected(self):
+        with pytest.raises(InvalidFormatError, match="유효하지 않은 신뢰도"):
+            Confidence(float("nan"))
+
+    def test_infinity_rejected(self):
+        with pytest.raises(InvalidFormatError, match="유효하지 않은 신뢰도"):
+            Confidence(float("inf"))
 
 
 # === ObjectCount ===
