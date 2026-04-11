@@ -18,9 +18,7 @@ from app.domain.enums import (
     TimeOfDay,
     Weather,
 )
-
 from tests.adapter.conftest import make_label, make_odd_tag, make_rejection, make_selection
-
 
 # === MySQL Mapper 왕복 검증 ===
 

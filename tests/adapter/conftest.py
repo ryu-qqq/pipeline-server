@@ -1,10 +1,9 @@
 """adapter 레이어 테스트 공통 fixture
 
-MySQL testcontainer를 사용하여 실제 MySQL에서 Repository/QueryBuilder를 검증한다.
+MySQL testcontainer는 tests/conftest.py에서 session 스코프로 공유한다.
 Router 테스트는 Mock 서비스를 사용하므로 DB 의존 없음.
 """
 
-import os
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -12,15 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from testcontainers.mysql import MySqlContainer
 
 from app.adapter.outbound.mysql.database import Base
-from app.rest_dependencies import (
-    get_analysis_service,
-    get_data_read_service,
-    get_rejection_read_service,
-    get_task_read_service,
-)
 from app.domain.enums import (
     ObjectClass,
     RejectionReason,
@@ -39,27 +31,19 @@ from app.domain.value_objects import (
     WiperState,
 )
 from app.main import app
+from app.rest_dependencies import (
+    get_analysis_service,
+    get_data_read_service,
+    get_rejection_read_service,
+    get_task_read_service,
+)
 
-
-# === MySQL Testcontainer ===
-
-
-@pytest.fixture(scope="session")
-def mysql_container():
-    """MySQL 8.0 테스트 컨테이너 — adapter 테스트 전용"""
-    container = MySqlContainer(
-        image="mysql:8.0",
-        username="test",
-        password="test",
-        dbname="adapter_test",
-    )
-    with container:
-        yield container
+# === MySQL 엔진 (루트 conftest의 mysql_container를 상속받아 사용) ===
 
 
 @pytest.fixture(scope="session")
 def db_engine(mysql_container):
-    """MySQL 엔진 — 세션 동안 한 번만 생성한다."""
+    """MySQL 엔진 — 루트 conftest의 mysql_container를 사용한다."""
     import app.adapter.outbound.mysql.entities  # noqa: F401
 
     url = mysql_container.get_connection_url()

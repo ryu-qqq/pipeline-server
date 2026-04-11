@@ -13,13 +13,10 @@ from app.adapter.outbound.mysql.repositories import (
 from app.domain.enums import (
     ObjectClass,
     RejectionReason,
-    RoadSurface,
     Stage,
-    TimeOfDay,
     Weather,
 )
 from app.domain.models import DataSearchCriteria, RejectionCriteria
-
 from tests.adapter.conftest import (
     TASK_ID,
     make_label,
@@ -27,7 +24,6 @@ from tests.adapter.conftest import (
     make_rejection,
     make_selection,
 )
-
 
 # === SqlSelectionRepository ===
 

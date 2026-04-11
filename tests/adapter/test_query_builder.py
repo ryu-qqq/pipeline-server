@@ -91,7 +91,7 @@ class TestDataSearchQueryBuilder:
         assert "'car'" in sql
         assert "obj_count >= 3" in sql
         assert "avg_confidence >= 0.8" in sql
-        assert "IN" in sql
+        assert "EXISTS" in sql
 
     def test_pagination(self):
         criteria = DataSearchCriteria(page=3, size=10)

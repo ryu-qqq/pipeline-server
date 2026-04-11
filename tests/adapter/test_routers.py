@@ -11,13 +11,10 @@ from app.domain.exceptions import ConflictError, DataNotFoundError
 from app.domain.models import (
     AnalysisResult,
     AnalyzeTask,
-    Rejection,
     SearchResult,
 )
 from app.domain.value_objects import StageProgress, StageResult
-
 from tests.adapter.conftest import make_label, make_odd_tag, make_rejection, make_selection
-
 
 # === POST /analyze ===
 

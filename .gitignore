@@ -28,6 +28,9 @@ Thumbs.db
 .env
 .env.local
 
+# Claude Code 로컬 설정 (개인 permission)
+.claude/settings.local.json
+
 # 과제 원본 (제출물에서 제외)
 screening-test.md
 jd.txt

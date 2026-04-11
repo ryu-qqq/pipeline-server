@@ -23,13 +23,13 @@ from app.application.analysis_service import AnalysisService
 from app.application.data_read_service import DataReadService
 from app.application.rejection_read_service import RejectionReadService
 from app.application.task_read_service import TaskReadService
+from app.domain.enums import TaskStatus
 from app.rest_dependencies import (
     get_analysis_service,
     get_data_read_service,
     get_rejection_read_service,
     get_task_read_service,
 )
-from app.domain.enums import TaskStatus
 
 router = APIRouter(tags=["Pipeline"])
 

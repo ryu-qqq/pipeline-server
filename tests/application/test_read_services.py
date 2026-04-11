@@ -11,7 +11,6 @@ from app.domain.models import AnalyzeTask, DataSearchCriteria, RejectionCriteria
 from app.domain.ports import DataSearchRepository, RejectionRepository, TaskRepository
 from app.domain.value_objects import StageProgress
 
-
 # === TaskReadService ===
 
 

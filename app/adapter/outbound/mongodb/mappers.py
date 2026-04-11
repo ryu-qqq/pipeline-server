@@ -1,10 +1,10 @@
+import dataclasses
+
 from app.adapter.outbound.mongodb.documents import (
     AnalyzeTaskDocument,
     OutboxDocument,
     StageProgressDocument,
 )
-import dataclasses
-
 from app.domain.enums import OutboxStatus, Stage, TaskStatus
 from app.domain.models import AnalysisResult, AnalyzeTask, OutboxMessage
 from app.domain.value_objects import StageProgress, StageResult

@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, call, patch
+from datetime import datetime
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.application.outbox_relay_service import OutboxRelayService
 from app.domain.enums import OutboxStatus
-from app.domain.models import OutboxCriteria, OutboxMessage
+from app.domain.models import OutboxMessage
 from app.domain.ports import OutboxRepository, TaskDispatcher
 
 

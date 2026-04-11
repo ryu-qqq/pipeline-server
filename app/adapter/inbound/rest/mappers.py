@@ -10,7 +10,14 @@ from app.adapter.inbound.rest.schemas import (
     TaskProgressResponse,
     TaskResponse,
 )
-from app.domain.models import AnalysisResult, AnalyzeTask, DataSearchCriteria, Rejection, RejectionCriteria, SearchResult
+from app.domain.models import (
+    AnalysisResult,
+    AnalyzeTask,
+    DataSearchCriteria,
+    Rejection,
+    RejectionCriteria,
+    SearchResult,
+)
 
 
 class AnalysisResponseMapper:

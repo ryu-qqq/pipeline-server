@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.adapter.outbound.mysql.entities import (
     LabelEntity,
     OddTagEntity,
-    RejectionEntity,
     SelectionEntity,
 )
 from app.adapter.outbound.mysql.mappers import (
@@ -15,13 +14,13 @@ from app.adapter.outbound.mysql.mappers import (
     RejectionMapper,
     SelectionMapper,
 )
-from app.adapter.outbound.mysql.query_builder import RejectionQueryBuilder, DataSearchQueryBuilder
-from app.domain.models import Label, OddTag, Rejection, RejectionCriteria, DataSearchCriteria, SearchResult, Selection
+from app.adapter.outbound.mysql.query_builder import DataSearchQueryBuilder, RejectionQueryBuilder
+from app.domain.models import DataSearchCriteria, Label, OddTag, Rejection, RejectionCriteria, SearchResult, Selection
 from app.domain.ports import (
+    DataSearchRepository,
     LabelRepository,
     OddTagRepository,
     RejectionRepository,
-    DataSearchRepository,
     SelectionRepository,
 )
 

@@ -42,6 +42,9 @@ ignore = [
     "UP046", # Pydantic BaseModel + Generic[T]는 아직 type parameter 문법 미지원
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["N802"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
