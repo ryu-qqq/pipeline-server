@@ -1,8 +1,9 @@
 import csv
-import json
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
+
+import ijson
 
 from app.domain.enums import FileType
 from app.domain.exceptions import DataNotFoundError, InvalidFormatError
@@ -18,21 +19,21 @@ class FileLoader(ABC):
 
 
 class JsonFileLoader(FileLoader):
-    """JSON 파일 로더 -- 전체 파싱 후 한 건씩 yield"""
+    """JSON 파일 로더 -- ijson 스트리밍으로 한 건씩 yield (메모리에 전체 로드 안 함)"""
 
     def load(self, path: Path) -> Iterator[RawData]:
         try:
-            with open(path) as f:
-                raw_list = json.load(f)
+            f = open(path, "rb")  # noqa: SIM115
         except FileNotFoundError as err:
             raise DataNotFoundError(f"파일을 찾을 수 없습니다: {path}") from err
-        except json.JSONDecodeError as e:
-            raise InvalidFormatError(f"JSON 파싱 실패: {path} -- {e}") from e
 
-        if not isinstance(raw_list, list):
-            raise InvalidFormatError(f"JSON 파일은 배열이어야 합니다: {type(raw_list).__name__}")
-
-        yield from raw_list
+        with f:
+            try:
+                yield from ijson.items(f, "item", use_float=True)
+            except ijson.JSONError as e:
+                raise InvalidFormatError(f"JSON 파싱 실패: {path} -- {e}") from e
+            except UnicodeDecodeError as err:
+                raise InvalidFormatError(f"파일 인코딩 오류: {path}") from err
 
 
 class CsvFileLoader(FileLoader):
@@ -43,12 +44,15 @@ class CsvFileLoader(FileLoader):
 
     def load(self, path: Path) -> Iterator[RawData]:
         try:
-            f = open(path, newline="")  # noqa: SIM115
+            f = open(path, newline="", encoding="utf-8")  # noqa: SIM115
         except FileNotFoundError as err:
             raise DataNotFoundError(f"파일을 찾을 수 없습니다: {path}") from err
 
         with f:
-            yield from csv.DictReader(f)
+            try:
+                yield from csv.DictReader(f)
+            except UnicodeDecodeError as err:
+                raise InvalidFormatError(f"CSV 읽기 중 인코딩 오류: {path}") from err
 
 
 class FileLoaderProvider:

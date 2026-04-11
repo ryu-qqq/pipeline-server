@@ -2,7 +2,7 @@ import pytest
 
 from app.application.odd_tag_refiner import OddTagRefiner
 from app.domain.enums import RejectionReason, RoadSurface, TimeOfDay, Weather
-from app.domain.models import OddTag, Rejection
+from app.domain.models import OddTag
 
 
 @pytest.fixture

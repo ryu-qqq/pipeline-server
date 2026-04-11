@@ -2,7 +2,7 @@ import pytest
 
 from app.application.selection_refiner import SelectionRefiner
 from app.domain.enums import RejectionReason
-from app.domain.models import Rejection, Selection
+from app.domain.models import Selection
 
 
 @pytest.fixture

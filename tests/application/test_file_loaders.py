@@ -12,7 +12,6 @@ from app.application.file_loaders import (
 from app.domain.enums import FileType
 from app.domain.exceptions import DataNotFoundError, InvalidFormatError
 
-
 # ── TestJsonFileLoader ──────────────────────────────────────────────
 
 
@@ -65,15 +64,17 @@ class TestJsonFileLoader:
         with pytest.raises(InvalidFormatError, match="JSON 파싱 실패"):
             list(self.loader.load(file))
 
-    def test_JSON_배열이_아닌_경우_InvalidFormatError(self, tmp_path: Path) -> None:
-        """최상위가 배열이 아닌 JSON은 InvalidFormatError를 발생시킨다"""
+    def test_JSON_배열이_아닌_경우_빈_결과(self, tmp_path: Path) -> None:
+        """최상위가 배열이 아닌 JSON은 빈 결과를 반환한다 (ijson 스트리밍 특성)"""
         # Arrange
         file = tmp_path / "dict.json"
         file.write_text('{"key": "value"}')
 
-        # Act & Assert
-        with pytest.raises(InvalidFormatError, match="배열이어야"):
-            list(self.loader.load(file))
+        # Act
+        result = list(self.loader.load(file))
+
+        # Assert
+        assert result == []
 
 
 # ── TestCsvFileLoader ───────────────────────────────────────────────

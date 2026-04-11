@@ -12,12 +12,11 @@ import pytest
 from app.application.phase_runners import (
     LabelPhaseRunner,
     OddTagPhaseRunner,
-    PhaseRunner,
     PhaseRunnerProvider,
     SelectionPhaseRunner,
 )
 from app.domain.enums import RejectionReason, Stage, TaskStatus
-from app.domain.models import AnalyzeTask, Rejection, Selection
+from app.domain.models import AnalyzeTask, Label, OddTag, Rejection, Selection
 from app.domain.ports import (
     LabelRepository,
     OddTagRepository,
@@ -27,7 +26,6 @@ from app.domain.ports import (
     TaskRepository,
 )
 from app.domain.value_objects import SourcePath, StageProgress, Temperature, VideoId, WiperState
-
 
 # === Fixture ===
 
@@ -205,7 +203,7 @@ class TestSelectionPhaseRunnerRun:
         raw_data_repo.find_by_task_and_source.return_value = iter(rows)
         selection_repo.save_all.return_value = 3  # 3건 모두 적재
 
-        result, updated_task = selection_runner.run(task, "task-1")
+        result, _updated_task = selection_runner.run(task, "task-1")
 
         assert result.total == 3
         assert result.loaded == 3
@@ -219,7 +217,7 @@ class TestSelectionPhaseRunnerRun:
         task = _make_task(sel_total=0)
         raw_data_repo.find_by_task_and_source.return_value = iter([])
 
-        result, updated_task = selection_runner.run(task, "task-1")
+        result, _updated_task = selection_runner.run(task, "task-1")
 
         assert result.total == 0
         assert result.loaded == 0
@@ -238,7 +236,7 @@ class TestSelectionPhaseRunnerRun:
         ]
         raw_data_repo.find_by_task_and_source.return_value = iter(invalid_rows)
 
-        result, updated_task = selection_runner.run(task, "task-1")
+        result, _updated_task = selection_runner.run(task, "task-1")
 
         assert result.loaded == 0
         assert result.rejected > 0
@@ -256,7 +254,7 @@ class TestSelectionPhaseRunnerRun:
         raw_data_repo.find_by_task_and_source.return_value = iter(rows)
         selection_repo.save_all.return_value = 2  # 2건 적재
 
-        result, updated_task = selection_runner.run(task, "task-1")
+        result, _updated_task = selection_runner.run(task, "task-1")
 
         assert result.loaded == 2
         assert result.rejected > 0
@@ -270,7 +268,7 @@ class TestSelectionPhaseRunnerRun:
         raw_data_repo.find_by_task_and_source.return_value = iter(rows)
         selection_repo.save_all.side_effect = [3, 2]  # 첫 청크 3건, 둘째 청크 2건
 
-        result, updated_task = selection_runner.run(task, "task-1")
+        result, _updated_task = selection_runner.run(task, "task-1")
 
         assert result.loaded == 5
         assert result.rejected == 0
@@ -434,7 +432,7 @@ class TestProgressUpdate:
         raw_data_repo.find_by_task_and_source.return_value = iter(rows)
         selection_repo.save_all.return_value = 3
 
-        result, updated_task = selection_runner.run(task, "task-1")
+        _result, updated_task = selection_runner.run(task, "task-1")
 
         # 갱신된 task의 selection_progress 확인
         progress = updated_task.selection_progress
@@ -478,9 +476,86 @@ class TestProgressUpdate:
         raw_data_repo.find_by_task_and_source.return_value = iter(rows)
         selection_repo.save_all.return_value = 2
 
-        result, updated_task = selection_runner.run(task, "task-1")
+        _result, updated_task = selection_runner.run(task, "task-1")
 
         progress = updated_task.selection_progress
         assert progress.processed == 2
         assert progress.rejected > 0
         assert progress.total == 3
+
+
+# === UNLINKED_RECORD 테스트 ===
+
+
+class TestUnlinkedRecordRejection:
+    """OddTag/Label Phase에서 Selection에 없는 video_id를 UNLINKED_RECORD로 거부한다"""
+
+    def test_odd_tag_미참조_video_id_거부(self, raw_data_repo, task_repo, rejection_repo, odd_tag_repo):
+        """OddTag Phase: valid_selection_ids에 없는 video_id는 UNLINKED_RECORD 거부"""
+        runner = OddTagPhaseRunner(raw_data_repo, task_repo, rejection_repo, odd_tag_repo, chunk_size=10)
+        task = _make_task(odd_total=2)
+
+        # video_id 999는 Selection에 없음
+        rows = [
+            {"id": "1", "video_id": "1", "weather": "sunny", "time_of_day": "day", "road_surface": "dry"},
+            {"id": "2", "video_id": "999", "weather": "sunny", "time_of_day": "day", "road_surface": "dry"},
+        ]
+        raw_data_repo.find_by_task_and_source.return_value = iter(rows)
+        odd_tag_repo.save_all.return_value = 1
+
+        valid_selection_ids = {1}  # video_id 1만 존재
+        result, _updated_task = runner.run(task, "task-1", valid_selection_ids)
+
+        # video_id 999가 UNLINKED_RECORD로 거부
+        assert result.rejected > 0
+        rejection_repo.save_all.assert_called()
+        all_rejections = []
+        for call in rejection_repo.save_all.call_args_list:
+            all_rejections.extend(call[0][0])
+        unlinked = [r for r in all_rejections if r.reason == RejectionReason.UNLINKED_RECORD]
+        assert len(unlinked) == 1
+        assert "999" in unlinked[0].source_id
+
+    def test_label_미참조_video_id_거부(self, raw_data_repo, task_repo, rejection_repo, label_repo):
+        """Label Phase: valid_selection_ids에 없는 video_id는 UNLINKED_RECORD 거부"""
+        runner = LabelPhaseRunner(raw_data_repo, task_repo, rejection_repo, label_repo, chunk_size=10)
+        task = _make_task(label_total=2)
+
+        rows = [
+            {"video_id": "1", "object_class": "car", "obj_count": "5", "avg_confidence": "0.9", "labeled_at": "2026-01-01T12:00:00"},
+            {"video_id": "888", "object_class": "car", "obj_count": "3", "avg_confidence": "0.8", "labeled_at": "2026-01-01T12:00:00"},
+        ]
+        raw_data_repo.find_by_task_and_source.return_value = iter(rows)
+        label_repo.save_all.return_value = 1
+
+        valid_selection_ids = {1}
+        result, _updated_task = runner.run(task, "task-1", valid_selection_ids)
+
+        assert result.rejected > 0
+        rejection_repo.save_all.assert_called()
+        rejections = rejection_repo.save_all.call_args[0][0]
+        unlinked = [r for r in rejections if r.reason == RejectionReason.UNLINKED_RECORD]
+        assert len(unlinked) == 1
+        assert "888" in unlinked[0].source_id
+
+    def test_odd_tag_모든_video_id_유효시_거부_없음(self, raw_data_repo, task_repo, rejection_repo, odd_tag_repo):
+        """모든 video_id가 Selection에 존재하면 UNLINKED_RECORD 거부가 없다"""
+        runner = OddTagPhaseRunner(raw_data_repo, task_repo, rejection_repo, odd_tag_repo, chunk_size=10)
+        task = _make_task(odd_total=2)
+
+        rows = [
+            {"id": "1", "video_id": "1", "weather": "sunny", "time_of_day": "day", "road_surface": "dry"},
+            {"id": "2", "video_id": "2", "weather": "rainy", "time_of_day": "night", "road_surface": "wet"},
+        ]
+        raw_data_repo.find_by_task_and_source.return_value = iter(rows)
+        odd_tag_repo.save_all.return_value = 2
+
+        valid_selection_ids = {1, 2}
+        result, _updated_task = runner.run(task, "task-1", valid_selection_ids)
+
+        assert result.loaded == 2
+        all_rejections = []
+        for call in rejection_repo.save_all.call_args_list:
+            all_rejections.extend(call[0][0])
+        unlinked = [r for r in all_rejections if r.reason == RejectionReason.UNLINKED_RECORD]
+        assert len(unlinked) == 0

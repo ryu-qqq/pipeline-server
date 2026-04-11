@@ -7,7 +7,7 @@ from app.application.label_refiner import LabelRefiner
 from app.application.odd_tag_refiner import OddTagRefiner
 from app.application.selection_refiner import SelectionRefiner
 from app.domain.enums import RejectionReason, Stage
-from app.domain.models import AnalyzeTask, Rejection
+from app.domain.models import AnalyzeTask, Label, OddTag, Rejection
 from app.domain.ports import (
     LabelRepository,
     OddTagRepository,
@@ -27,7 +27,7 @@ class PhaseRunnerProvider:
     """Stage에 맞는 PhaseRunner를 반환하는 프로바이더"""
 
     def __init__(self) -> None:
-        self._runners: dict[Stage, "PhaseRunner"] = {}
+        self._runners: dict[Stage, PhaseRunner] = {}
 
     def register(self, stage: Stage, runner: "PhaseRunner") -> None:
         self._runners[stage] = runner
@@ -182,7 +182,10 @@ class SelectionPhaseRunner(PhaseRunner):
 
 
 class OddTagPhaseRunner(PhaseRunner):
-    """ODD Tagging Phase — OddTagRefiner 정제 + 적재"""
+    """ODD Tagging Phase — OddTagRefiner 정제 + 적재
+
+    Selection에 존재하지 않는 video_id는 UNLINKED_RECORD로 거부한다.
+    """
 
     def __init__(
         self,
@@ -205,14 +208,26 @@ class OddTagPhaseRunner(PhaseRunner):
         return "odds"
 
     def _refine_single(self, task_id: str, row: dict, valid_selection_ids: set[int]) -> object:
-        return self._refiner.refine_single(task_id, row)
+        result = self._refiner.refine_single(task_id, row)
+        if isinstance(result, OddTag) and valid_selection_ids and result.video_id.value not in valid_selection_ids:
+            return Rejection(
+                task_id=task_id, stage=Stage.ODD_TAGGING,
+                reason=RejectionReason.UNLINKED_RECORD,
+                source_id=str(result.video_id.value), field="video_id",
+                detail=f"Selection에 존재하지 않는 video_id: {result.video_id.value}",
+                created_at=datetime.now(),
+            )
+        return result
 
     def _save_valid_ignore_duplicates(self, items: list) -> int:
         return self._odd_tag_repo.save_all(items)
 
 
 class LabelPhaseRunner(PhaseRunner):
-    """Auto Labeling Phase — LabelRefiner 정제 + 적재"""
+    """Auto Labeling Phase — LabelRefiner 정제 + 적재
+
+    Selection에 존재하지 않는 video_id는 UNLINKED_RECORD로 거부한다.
+    """
 
     def __init__(
         self,
@@ -235,7 +250,17 @@ class LabelPhaseRunner(PhaseRunner):
         return "labels"
 
     def _refine_single(self, task_id: str, row: dict, valid_selection_ids: set[int]) -> object:
-        return self._refiner.refine_single(task_id, row)
+        result = self._refiner.refine_single(task_id, row)
+        if isinstance(result, Label) and valid_selection_ids and result.video_id.value not in valid_selection_ids:
+            return Rejection(
+                task_id=task_id, stage=Stage.AUTO_LABELING,
+                reason=RejectionReason.UNLINKED_RECORD,
+                source_id=f"{result.video_id.value}:{result.object_class.value}",
+                field="video_id",
+                detail=f"Selection에 존재하지 않는 video_id: {result.video_id.value}",
+                created_at=datetime.now(),
+            )
+        return result
 
     def _save_valid_ignore_duplicates(self, items: list) -> int:
         return self._label_repo.save_all(items)

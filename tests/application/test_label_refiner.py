@@ -2,7 +2,7 @@ import pytest
 
 from app.application.label_refiner import LabelRefiner
 from app.domain.enums import ObjectClass, RejectionReason
-from app.domain.models import Label, Rejection
+from app.domain.models import Label
 
 
 @pytest.fixture
