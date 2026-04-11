@@ -84,7 +84,7 @@ class RejectionCriteriaMapper:
             reason=request.reason,
             source_id=request.source_id,
             field=request.field,
-            page=request.page if request.after is None else None,
+            page=request.page,
             size=request.size,
             after=request.after,
         )
@@ -106,7 +106,7 @@ class DataSearchCriteriaMapper:
             object_class=request.object_class,
             min_obj_count=request.min_obj_count,
             min_confidence=request.min_confidence,
-            page=request.page if request.after is None else None,
+            page=request.page,
             size=request.size,
             after=request.after,
         )

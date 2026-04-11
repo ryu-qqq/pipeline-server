@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.domain.enums import (
     ObjectClass,
@@ -114,20 +114,28 @@ class TaskSubmitResponse(BaseModel):
 
 
 class RejectionSearchRequest(BaseModel):
-    """GET /rejections 조회 요청"""
+    """GET /rejections 조회 요청 — page(offset) 또는 after(cursor) 중 하나만 사용"""
 
     task_id: str | None = None
     stage: Stage | None = None
     reason: RejectionReason | None = None
     source_id: str | None = None
     field: str | None = None
-    page: int | None = Field(1, ge=1)
+    page: int | None = Field(None, ge=1)
     size: int = Field(20, ge=1, le=100)
     after: int | None = None
 
+    @model_validator(mode="after")
+    def _validate_pagination(self) -> "RejectionSearchRequest":
+        if self.page is not None and self.after is not None:
+            raise ValueError("page와 after는 동시에 사용할 수 없습니다")
+        if self.page is None and self.after is None:
+            object.__setattr__(self, "page", 1)
+        return self
+
 
 class DataSearchRequest(BaseModel):
-    """GET /data 검색 요청"""
+    """GET /data 검색 요청 — page(offset) 또는 after(cursor) 중 하나만 사용"""
 
     task_id: str | None = None
 
@@ -148,9 +156,17 @@ class DataSearchRequest(BaseModel):
     min_obj_count: int | None = Field(None, ge=0)
     min_confidence: float | None = Field(None, ge=0.0, le=1.0)
 
-    page: int | None = Field(1, ge=1)
+    page: int | None = Field(None, ge=1)
     size: int = Field(20, ge=1, le=100)
     after: int | None = None
+
+    @model_validator(mode="after")
+    def _validate_pagination(self) -> "DataSearchRequest":
+        if self.page is not None and self.after is not None:
+            raise ValueError("page와 after는 동시에 사용할 수 없습니다")
+        if self.page is None and self.after is None:
+            object.__setattr__(self, "page", 1)
+        return self
 
 
 # === Response DTO ===
