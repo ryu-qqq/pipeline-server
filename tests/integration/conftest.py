@@ -38,10 +38,19 @@ def mongo_container():
     트랜잭션을 위해 replica set으로 시작한다.
     testcontainers의 MongoDbContainer는 인증을 강제하므로,
     DockerContainer를 직접 사용하여 인증 없이 replica set 모드로 실행한다.
+
+    안정성 강화:
+    - 로그 대기 타임아웃 60초
+    - ping으로 서버 준비 확인 후 replica set 초기화
+    - TESTCONTAINERS_RYUK_DISABLED=true로 Ryuk 비활성화 권장
     """
-    container = DockerContainer(image="mongo:7.0").with_exposed_ports(27017).with_command("--replSet rs0 --bind_ip_all")
+    container = (
+        DockerContainer(image="mongo:7.0")
+        .with_exposed_ports(27017)
+        .with_command("--replSet rs0 --bind_ip_all")
+    )
     with container:
-        wait_for_logs(container, "Waiting for connections", timeout=30)
+        wait_for_logs(container, "Waiting for connections", timeout=60)
         _init_replica_set(container)
         yield container
 
@@ -54,7 +63,19 @@ def _init_replica_set(container: DockerContainer) -> None:
 
     host = container.get_container_host_ip()
     port = container.get_exposed_port(27017)
-    client = MongoClient(f"mongodb://{host}:{port}/?directConnection=true")
+    client = MongoClient(
+        f"mongodb://{host}:{port}/?directConnection=true",
+        serverSelectionTimeoutMS=10000,
+        connectTimeoutMS=10000,
+    )
+
+    # ping으로 서버 준비 확인
+    for _ in range(30):
+        try:
+            client.admin.command("ping")
+            break
+        except Exception:
+            time.sleep(1)
 
     with contextlib.suppress(OperationFailure):
         client.admin.command(
@@ -166,8 +187,20 @@ def _clean_mysql(db_engine):
 
 @pytest.fixture(scope="session")
 def mongo_client(_set_env):
-    """MongoDB 클라이언트"""
-    client = MongoClient(os.environ["MONGO_URL"])
+    """MongoDB 클라이언트 — 연결 복원력 옵션 포함
+
+    serverSelectionTimeoutMS: 서버 선택 대기 시간 (기본 30s → 60s)
+    socketTimeoutMS: 소켓 작업 대기 시간 (기본 0=무한 → 60s)
+    retryWrites/retryReads: 일시적 네트워크 오류 시 자동 재시도
+    """
+    client = MongoClient(
+        os.environ["MONGO_URL"],
+        serverSelectionTimeoutMS=60000,
+        socketTimeoutMS=60000,
+        connectTimeoutMS=30000,
+        retryWrites=True,
+        retryReads=True,
+    )
     yield client
     client.close()
 
@@ -180,10 +213,17 @@ def mongo_db(mongo_client):
 
 @pytest.fixture()
 def _clean_mongo(mongo_db):
-    """각 테스트 후 MongoDB 컬렉션 데이터를 삭제한다."""
+    """각 테스트 후 MongoDB 컬렉션 데이터를 삭제한다.
+
+    teardown 실패가 다음 테스트로 cascade하지 않도록
+    개별 컬렉션 삭제를 try/except로 보호한다.
+    """
     yield
     for coll_name in ("raw_data", "analyze_tasks", "outbox"):
-        mongo_db[coll_name].delete_many({})
+        try:
+            mongo_db[coll_name].delete_many({})
+        except Exception:
+            pass
 
 
 # === Redis ===
@@ -201,7 +241,10 @@ def redis_client(_set_env):
 def _clean_redis(redis_client):
     """각 테스트 후 Redis 데이터를 삭제한다."""
     yield
-    redis_client.flushdb()
+    try:
+        redis_client.flushdb()
+    except Exception:
+        pass
 
 
 # === Repository Fixture ===
