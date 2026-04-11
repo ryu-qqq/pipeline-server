@@ -122,8 +122,9 @@ class RejectionCriteria:
     reason: RejectionReason | None = None
     source_id: str | None = None
     field: str | None = None
-    page: int = 1
+    page: int | None = 1
     size: int = 20
+    after: int | None = None
 
 
 @dataclass(frozen=True)
@@ -149,8 +150,9 @@ class DataSearchCriteria:
     min_obj_count: int | None = None
     min_confidence: float | None = None
 
-    page: int = 1
+    page: int | None = 1
     size: int = 20
+    after: int | None = None
 
 
 @dataclass(frozen=True)

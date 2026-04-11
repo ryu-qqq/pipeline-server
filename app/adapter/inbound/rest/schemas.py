@@ -28,15 +28,16 @@ class ApiResponse(BaseModel, Generic[T]):
 
 
 class PageApiResponse(BaseModel, Generic[T]):
-    """페이지네이션 응답"""
+    """페이지네이션 응답 — offset(page) 또는 cursor(after) 방식 지원"""
 
     content: list[T]
-    page: int
-    size: int
-    total_elements: int
-    total_pages: int
-    first: bool
-    last: bool
+    page: int | None = None
+    size: int = 20
+    total_elements: int = 0
+    total_pages: int | None = None
+    first: bool | None = None
+    last: bool | None = None
+    next_after: int | None = None
     timestamp: str = Field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -51,6 +52,14 @@ class PageApiResponse(BaseModel, Generic[T]):
             total_pages=total_pages,
             first=page <= 1,
             last=page >= total_pages,
+        )
+
+    @classmethod
+    def of_cursor(cls, items: list[T], size: int, last_id: int | None) -> "PageApiResponse[T]":
+        return cls(
+            content=items,
+            size=size,
+            next_after=last_id,
         )
 
 
@@ -112,8 +121,9 @@ class RejectionSearchRequest(BaseModel):
     reason: RejectionReason | None = None
     source_id: str | None = None
     field: str | None = None
-    page: int = Field(1, ge=1)
+    page: int | None = Field(1, ge=1)
     size: int = Field(20, ge=1, le=100)
+    after: int | None = None
 
 
 class DataSearchRequest(BaseModel):
@@ -138,8 +148,9 @@ class DataSearchRequest(BaseModel):
     min_obj_count: int | None = Field(None, ge=0)
     min_confidence: float | None = Field(None, ge=0.0, le=1.0)
 
-    page: int = Field(1, ge=1)
+    page: int | None = Field(1, ge=1)
     size: int = Field(20, ge=1, le=100)
+    after: int | None = None
 
 
 # === Response DTO ===

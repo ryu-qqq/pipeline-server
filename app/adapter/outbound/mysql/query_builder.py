@@ -85,8 +85,12 @@ class DataSearchQueryBuilder:
 
     def _apply_pagination(self, stmt: Select) -> Select:
         c = self._criteria
-        offset = (c.page - 1) * c.size
-        return stmt.order_by(SelectionEntity.id).offset(offset).limit(c.size)
+        stmt = stmt.order_by(SelectionEntity.id)
+        if c.after is not None:
+            stmt = stmt.where(SelectionEntity.id > c.after)
+        elif c.page is not None:
+            stmt = stmt.offset((c.page - 1) * c.size)
+        return stmt.limit(c.size)
 
 
 class RejectionQueryBuilder:
@@ -125,5 +129,9 @@ class RejectionQueryBuilder:
 
     def _apply_pagination(self, stmt: Select) -> Select:
         c = self._criteria
-        offset = (c.page - 1) * c.size
-        return stmt.order_by(RejectionEntity.id).offset(offset).limit(c.size)
+        stmt = stmt.order_by(RejectionEntity.id)
+        if c.after is not None:
+            stmt = stmt.where(RejectionEntity.id > c.after)
+        elif c.page is not None:
+            stmt = stmt.offset((c.page - 1) * c.size)
+        return stmt.limit(c.size)

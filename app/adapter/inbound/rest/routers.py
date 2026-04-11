@@ -65,7 +65,8 @@ def get_rejections(
     criteria = RejectionCriteriaMapper.to_domain(request)
     rejections, total = service.search(criteria)
     items = [RejectionResponseMapper.from_domain(r) for r in rejections]
-    return PageApiResponse.of(items=items, total=total, page=request.page, size=request.size)
+
+    return PageApiResponse.of(items=items, total=total, page=request.page or 1, size=request.size)
 
 
 @router.get("/data", response_model=PageApiResponse[SearchResultResponse])
@@ -77,4 +78,8 @@ def search_data(
     criteria = DataSearchCriteriaMapper.to_domain(request)
     results, total = service.search(criteria)
     items = [SearchResultResponseMapper.from_domain(r) for r in results]
+
+    if request.after is not None:
+        last_id = results[-1].selection.id.value if results else None
+        return PageApiResponse.of_cursor(items=items, size=request.size, last_id=last_id)
     return PageApiResponse.of(items=items, total=total, page=request.page, size=request.size)
