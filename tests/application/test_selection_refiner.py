@@ -197,3 +197,12 @@ class TestSelectionRefinerUnknownSchema:
 
         assert isinstance(result, list)
         assert result[0].reason == RejectionReason.UNKNOWN_SCHEMA
+
+    def test_완전한_빈_dict_unknown_schema(self, refiner):
+        """빈 dict는 스키마 감지 불가로 UNKNOWN_SCHEMA Rejection을 반환한다"""
+        result = refiner.refine_single("task-3", {})
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0].reason == RejectionReason.UNKNOWN_SCHEMA
+        assert result[0].source_id == "?"

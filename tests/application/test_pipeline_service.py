@@ -185,3 +185,133 @@ class TestPipelineServiceExecute:
         called_stages = [c[0][0] for c in phase_provider.get.call_args_list]
         assert Stage.ODD_TAGGING in called_stages
         assert Stage.AUTO_LABELING in called_stages
+
+    def test_resume_odd_tagging_완료시_auto_labeling만_실행(
+        self, service, task_repo, selection_repo, odd_tag_repo, label_repo, phase_provider
+    ):
+        """last_completed_phase=ODD_TAGGING이면 AUTO_LABELING만 실행하고,
+        SELECTION/ODD_TAGGING은 기존 progress에서 StageResult를 생성한다."""
+        task = _make_task(
+            last_completed_phase=Stage.ODD_TAGGING,
+            sel_total=100,
+            odd_total=80,
+            label_total=60,
+        )
+        # 스킵 대상 Phase에 이미 progress가 있는 상태를 시뮬레이션
+        task = task.with_progress(
+            Stage.SELECTION, StageProgress(total=100, processed=90, rejected=10)
+        )
+        task = task.with_progress(
+            Stage.ODD_TAGGING, StageProgress(total=80, processed=70, rejected=10)
+        )
+        task_repo.find_by_id.return_value = task
+
+        label_result = StageResult(total=60, loaded=55, rejected=5)
+        label_runner = MagicMock()
+        label_runner.run.side_effect = lambda t, tid, vids=None: (
+            label_result,
+            t.with_completed_phase(Stage.AUTO_LABELING),
+        )
+
+        phase_provider.get.side_effect = lambda s: {
+            Stage.AUTO_LABELING: label_runner,
+        }[s]
+
+        selection_repo.find_all_ids_by_task.return_value = {1, 2, 3}
+        odd_tag_repo.find_all_video_ids_by_task.return_value = {1, 2, 3}
+        label_repo.find_all_video_ids_by_task.return_value = {1, 2}
+
+        service.execute("task-1")
+
+        # SELECTION, ODD_TAGGING runner는 호출되지 않아야 함
+        called_stages = [c[0][0] for c in phase_provider.get.call_args_list]
+        assert Stage.SELECTION not in called_stages
+        assert Stage.ODD_TAGGING not in called_stages
+        assert Stage.AUTO_LABELING in called_stages
+
+        # label_runner만 실행됨
+        label_runner.run.assert_called_once()
+
+        # 완료된 task의 result에 스킵된 Phase의 StageResult가 기존 progress 기반으로 생성됨
+        last_save = task_repo.save.call_args_list[-1][0][0]
+        assert last_save.status == TaskStatus.COMPLETED
+        result = last_save.result
+        # 스킵된 Phase: 기존 progress에서 StageResult 생성
+        assert result.selection == StageResult(total=100, loaded=90, rejected=10)
+        assert result.odd_tagging == StageResult(total=80, loaded=70, rejected=10)
+        # 실행된 Phase: runner 반환값 사용
+        assert result.auto_labeling == label_result
+
+    def test_build_result_교집합_없음(
+        self, service, task_repo, selection_repo, odd_tag_repo, label_repo, cache_repo, phase_provider
+    ):
+        """selection_ids와 odd/label_ids의 교집합이 0이면 fully_linked=0, partial=전체"""
+        task = _make_task()
+        task_repo.find_by_id.return_value = task
+
+        sel_result = StageResult(total=100, loaded=3, rejected=0)
+        odd_result = StageResult(total=80, loaded=2, rejected=0)
+        label_result = StageResult(total=60, loaded=2, rejected=0)
+
+        sel_runner = MagicMock()
+        odd_runner = MagicMock()
+        label_runner = MagicMock()
+
+        sel_runner.run.side_effect = lambda t, tid, vids=None: (sel_result, t.with_completed_phase(Stage.SELECTION))
+        odd_runner.run.side_effect = lambda t, tid, vids=None: (odd_result, t.with_completed_phase(Stage.ODD_TAGGING))
+        label_runner.run.side_effect = lambda t, tid, vids=None: (label_result, t.with_completed_phase(Stage.AUTO_LABELING))
+
+        phase_provider.get.side_effect = lambda s: {
+            Stage.SELECTION: sel_runner,
+            Stage.ODD_TAGGING: odd_runner,
+            Stage.AUTO_LABELING: label_runner,
+        }[s]
+
+        # 교집합이 전혀 없는 ID 세트
+        selection_repo.find_all_ids_by_task.return_value = {1, 2, 3}
+        odd_tag_repo.find_all_video_ids_by_task.return_value = {4, 5}
+        label_repo.find_all_video_ids_by_task.return_value = {6, 7}
+
+        service.execute("task-1")
+
+        last_save = task_repo.save.call_args_list[-1][0][0]
+        result = last_save.result
+        assert result.fully_linked == 0
+        assert result.partial == 3
+
+    def test_build_result_전체_일치(
+        self, service, task_repo, selection_repo, odd_tag_repo, label_repo, cache_repo, phase_provider
+    ):
+        """모든 ID가 동일하면 fully_linked=전체, partial=0"""
+        task = _make_task()
+        task_repo.find_by_id.return_value = task
+
+        sel_result = StageResult(total=100, loaded=3, rejected=0)
+        odd_result = StageResult(total=80, loaded=3, rejected=0)
+        label_result = StageResult(total=60, loaded=3, rejected=0)
+
+        sel_runner = MagicMock()
+        odd_runner = MagicMock()
+        label_runner = MagicMock()
+
+        sel_runner.run.side_effect = lambda t, tid, vids=None: (sel_result, t.with_completed_phase(Stage.SELECTION))
+        odd_runner.run.side_effect = lambda t, tid, vids=None: (odd_result, t.with_completed_phase(Stage.ODD_TAGGING))
+        label_runner.run.side_effect = lambda t, tid, vids=None: (label_result, t.with_completed_phase(Stage.AUTO_LABELING))
+
+        phase_provider.get.side_effect = lambda s: {
+            Stage.SELECTION: sel_runner,
+            Stage.ODD_TAGGING: odd_runner,
+            Stage.AUTO_LABELING: label_runner,
+        }[s]
+
+        # 전체 일치하는 ID 세트
+        selection_repo.find_all_ids_by_task.return_value = {1, 2, 3}
+        odd_tag_repo.find_all_video_ids_by_task.return_value = {1, 2, 3}
+        label_repo.find_all_video_ids_by_task.return_value = {1, 2, 3}
+
+        service.execute("task-1")
+
+        last_save = task_repo.save.call_args_list[-1][0][0]
+        result = last_save.result
+        assert result.fully_linked == 3
+        assert result.partial == 0

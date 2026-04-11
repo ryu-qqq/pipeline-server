@@ -110,3 +110,14 @@ class TestOddTagRefinerMultipleErrors:
         reasons = {r.reason for r in result}
         assert RejectionReason.INVALID_ENUM_VALUE in reasons
         assert RejectionReason.MISSING_REQUIRED_FIELD in reasons
+
+    def test_빈_dict_모든_필드_누락(self, refiner):
+        """빈 dict는 id, video_id, weather, time_of_day, road_surface 모두 누락으로 최소 3건 이상 Rejection"""
+        result = refiner.refine_single("task-1", {})
+
+        assert isinstance(result, list)
+        assert len(result) >= 3
+        fields = {r.field for r in result}
+        assert "weather" in fields
+        assert "time_of_day" in fields
+        assert "road_surface" in fields

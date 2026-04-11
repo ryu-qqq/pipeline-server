@@ -24,6 +24,16 @@ docker compose up --build -d
 4. **app** — FastAPI 서버 (http://localhost:8000)
 5. **worker** — Celery Worker + Beat (비동기 정제 파이프라인 + Outbox 폴링)
 
+### API 문서
+
+서버 실행 후 아래 URL에서 API 문서를 확인할 수 있습니다:
+
+| URL | 설명 |
+|---|---|
+| http://localhost:8000/docs | **Swagger UI** — 인터랙티브 API 테스트 |
+| http://localhost:8000/redoc | **ReDoc** — 깔끔한 API 레퍼런스 문서 |
+| http://localhost:8000/openapi.json | **OpenAPI 3.0 스펙** (JSON) |
+
 ### API 호출 예시
 
 ```bash

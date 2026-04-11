@@ -111,3 +111,15 @@ class TestLabelRefinerMultipleErrors:
 
         assert isinstance(result, list)
         assert len(result) >= 2
+
+    def test_빈_dict_모든_필드_누락(self, refiner):
+        """빈 dict는 video_id, object_class, obj_count, avg_confidence, labeled_at 모두 누락"""
+        result = refiner.refine_single("task-1", {})
+
+        assert isinstance(result, list)
+        assert len(result) >= 4
+        fields = {r.field for r in result}
+        assert "video_id" in fields
+        assert "object_class" in fields
+        assert "obj_count" in fields
+        assert "avg_confidence" in fields

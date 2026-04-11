@@ -302,6 +302,54 @@ class TestAnalyzeTask:
         assert task.get_progress_for(Stage.ODD_TAGGING).total == 5
         assert task.get_progress_for(Stage.AUTO_LABELING).total == 3
 
+    def test_상태_전이_체인_정상_완료(self):
+        """PENDING → PROCESSING → COMPLETED 전체 체인 + 원본 불변 확인"""
+        # Arrange
+        original = AnalyzeTask.create_new("t", 10, 5, 3)
+
+        # Act: 전이 체인
+        processing = original.start_processing()
+        result = AnalysisResult(
+            selection=StageResult(10, 8, 2),
+            odd_tagging=StageResult(5, 5, 0),
+            auto_labeling=StageResult(3, 3, 0),
+            fully_linked=3,
+            partial=2,
+        )
+        completed = processing.complete_with(result)
+
+        # Assert: 각 단계 상태 확인
+        assert original.status == TaskStatus.PENDING
+        assert processing.status == TaskStatus.PROCESSING
+        assert completed.status == TaskStatus.COMPLETED
+        assert completed.result is result
+        assert completed.completed_at is not None
+
+        # Assert: 원본 불변
+        assert original.status == TaskStatus.PENDING
+        assert original.result is None
+        assert original.completed_at is None
+
+    def test_상태_전이_체인_실패(self):
+        """PENDING → PROCESSING → FAILED 전체 체인 + 원본 불변 확인"""
+        # Arrange
+        original = AnalyzeTask.create_new("t", 10, 5, 3)
+
+        # Act: 전이 체인
+        processing = original.start_processing()
+        failed = processing.fail_with("파이프라인 타임아웃")
+
+        # Assert: 각 단계 상태 확인
+        assert original.status == TaskStatus.PENDING
+        assert processing.status == TaskStatus.PROCESSING
+        assert failed.status == TaskStatus.FAILED
+        assert failed.error == "파이프라인 타임아웃"
+        assert failed.completed_at is not None
+
+        # Assert: 원본 불변
+        assert original.status == TaskStatus.PENDING
+        assert original.error is None
+
 
 # === OutboxMessage ===
 
@@ -371,6 +419,26 @@ class TestOutboxMessage:
         msg = msg.back_to_pending().with_retry_incremented()
         assert msg.status == OutboxStatus.PENDING
         assert msg.retry_count == 1
+
+    def test_재시도_최대_횟수까지_is_retriable_변화(self):
+        """retry_increment를 max_retries까지 반복하면 is_retriable이 False로 전환된다"""
+        msg = OutboxMessage.create_analyze_event("m", "t")
+        assert msg.max_retries == 3
+
+        # 1회 재시도
+        msg = msg.with_retry_incremented()
+        assert msg.retry_count == 1
+        assert msg.is_retriable() is True
+
+        # 2회 재시도
+        msg = msg.with_retry_incremented()
+        assert msg.retry_count == 2
+        assert msg.is_retriable() is True
+
+        # 3회 재시도 (max_retries 도달)
+        msg = msg.with_retry_incremented()
+        assert msg.retry_count == 3
+        assert msg.is_retriable() is False
 
 
 # === AnalysisResult ===

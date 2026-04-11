@@ -7,6 +7,7 @@ from app.domain.enums import (
     Stage,
     TaskStatus,
 )
+from app.domain.exceptions import ConflictError, DataNotFoundError
 from app.domain.models import (
     AnalysisResult,
     AnalyzeTask,
@@ -32,6 +33,17 @@ class TestPostAnalyze:
         assert body["data"]["task_id"] == "task-abc-123"
         assert body["data"]["status"] == TaskStatus.PENDING
         mock_analysis_service.submit.assert_called_once()
+
+    def test_conflict_시_409_반환(self, test_client, mock_analysis_service):
+        """이미 진행 중인 작업이 있으면 ConflictError → 409 응답"""
+        mock_analysis_service.submit.side_effect = ConflictError("이미 진행 중인 작업이 있습니다")
+
+        resp = test_client.post("/analyze")
+
+        assert resp.status_code == 409
+        body = resp.json()
+        assert body["code"] == "CONFLICT"
+        assert "진행 중" in body["detail"]
 
 
 # === GET /analyze/{task_id} ===
@@ -94,6 +106,17 @@ class TestGetTaskStatus:
         assert data["status"] == TaskStatus.COMPLETED
         assert data["result"]["fully_linked"] == 90
         assert data["result"]["partial"] == 3
+
+    def test_미존재_task_에러_반환(self, test_client, mock_task_read_service):
+        """존재하지 않는 task_id 조회 시 DataNotFoundError → 400 응답"""
+        mock_task_read_service.get_task.side_effect = DataNotFoundError("데이터를 찾을 수 없습니다")
+
+        resp = test_client.get("/analyze/non-existent-task")
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["code"] == "DATA_NOT_FOUND"
+        assert "찾을 수 없" in body["detail"]
 
 
 # === GET /rejections ===
@@ -162,3 +185,55 @@ class TestSearchData:
         assert item["time_of_day"] == "day"
         assert len(item["labels"]) == 1
         assert item["labels"][0]["object_class"] == "car"
+
+    def test_cursor_페이징_after_사용(self, test_client, mock_data_read_service):
+        """GET /data?after=100&size=10 → 커서 기반 페이징, next_after 존재"""
+        selection = make_selection(video_id=200)
+        odd_tag = make_odd_tag(video_id=200)
+        label = make_label(video_id=200)
+
+        results = [SearchResult(selection=selection, odd_tag=odd_tag, labels=[label])]
+        mock_data_read_service.search.return_value = (results, 1)
+
+        resp = test_client.get("/data", params={"after": 100, "size": 10})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        # 커서 페이징 응답: next_after가 마지막 결과의 id
+        assert body["next_after"] == 200
+        assert body["size"] == 10
+        # offset 페이징 필드는 기본값(None/0)
+        assert body["page"] is None
+        assert body["total_elements"] == 0
+
+    def test_cursor_빈_결과(self, test_client, mock_data_read_service):
+        """GET /data?after=999999&size=10 → 빈 결과일 때 next_after=None"""
+        mock_data_read_service.search.return_value = ([], 0)
+
+        resp = test_client.get("/data", params={"after": 999999, "size": 10})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["content"] == []
+        assert body["next_after"] is None
+
+
+# === 페이징 검증 ===
+
+
+class TestPaginationValidation:
+    def test_page_와_after_동시_사용_불가_data(self, test_client, mock_data_read_service):
+        """GET /data?page=1&after=100 → page와 after 동시 사용 시 400 에러"""
+        resp = test_client.get("/data", params={"page": 1, "after": 100})
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert "page" in body["detail"] and "after" in body["detail"]
+
+    def test_page_와_after_동시_사용_불가_rejections(self, test_client, mock_rejection_read_service):
+        """GET /rejections?page=1&after=100 → page와 after 동시 사용 시 400 에러"""
+        resp = test_client.get("/rejections", params={"page": 1, "after": 100})
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert "page" in body["detail"] and "after" in body["detail"]
