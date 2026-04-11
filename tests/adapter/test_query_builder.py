@@ -1,17 +1,7 @@
-"""QueryBuilder 테스트 — SQL 구문을 SQLite에서 컴파일하여 조건절/페이지네이션을 검증한다."""
+"""QueryBuilder 테스트 — SQL 구문을 MySQL 방언으로 컴파일하여 조건절/페이지네이션을 검증한다."""
 
 from datetime import datetime
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-
-from app.adapter.outbound.mysql.database import Base
-from app.adapter.outbound.mysql.entities import (
-    LabelEntity,
-    OddTagEntity,
-    RejectionEntity,
-    SelectionEntity,
-)
 from app.adapter.outbound.mysql.query_builder import (
     DataSearchQueryBuilder,
     RejectionQueryBuilder,
@@ -28,10 +18,10 @@ from app.domain.models import DataSearchCriteria, RejectionCriteria
 
 
 def _compile_sql(stmt) -> str:
-    """SQLAlchemy Select를 SQLite 방언으로 컴파일한 SQL 문자열을 반환한다."""
-    from sqlalchemy.dialects import sqlite
+    """SQLAlchemy Select를 MySQL 방언으로 컴파일한 SQL 문자열을 반환한다."""
+    from sqlalchemy.dialects import mysql
 
-    return str(stmt.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+    return str(stmt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True}))
 
 
 # === DataSearchQueryBuilder ===
@@ -108,9 +98,8 @@ class TestDataSearchQueryBuilder:
         builder = DataSearchQueryBuilder(criteria)
         sql = _compile_sql(builder.build_query())
 
-        # offset = (3 - 1) * 10 = 20
-        assert "LIMIT 10" in sql
-        assert "OFFSET 20" in sql
+        # MySQL LIMIT 문법: LIMIT offset, count → LIMIT 20, 10
+        assert "LIMIT 20, 10" in sql
 
     def test_count_query_has_no_pagination(self):
         criteria = DataSearchCriteria(task_id="task-001", page=2, size=10)
@@ -193,9 +182,8 @@ class TestRejectionQueryBuilder:
         builder = RejectionQueryBuilder(criteria)
         sql = _compile_sql(builder.build_query())
 
-        # offset = (2 - 1) * 15 = 15
-        assert "LIMIT 15" in sql
-        assert "OFFSET 15" in sql
+        # MySQL LIMIT 문법: LIMIT offset, count → LIMIT 15, 15
+        assert "LIMIT 15, 15" in sql
 
     def test_count_query(self):
         criteria = RejectionCriteria(task_id="task-001")

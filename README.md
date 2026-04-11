@@ -164,15 +164,30 @@ Rejection은 `task_id` + `stage` + `reason` + `source_id` + `field`로 구조화
 
 ## 대용량 처리 전략
 
-| 전략 | 구현 |
-|---|---|
-| **스트리밍 조회** | MongoDB cursor를 Iterator로 반환, 전체를 메모리에 올리지 않음 |
-| **청크 단위 적재** | 5,000건씩 배치 INSERT, 생성자 주입으로 튜닝 가능 |
-| **INSERT IGNORE** | UNIQUE 위반 시 건별 재시도 없이 배치 한 방에 처리, rowcount로 중복 건수 파악 |
-| **Phase 단위 진행률** | MongoDB upsert를 Phase 완료 시 1번만 (3번/파이프라인) |
-| **task_id별 데이터 격리** | DELETE ALL 없이 데이터 누적, 조회 시 task_id 필터 |
-| **복합 인덱스** | 검색 쿼리 패턴에 맞춘 covering index |
-| **cursor 페이징** | 대용량 뒤쪽 페이지에서 offset 대신 `WHERE id > after` 사용 |
+### 쓰기: "검증은 DB에 위임하고, 애플리케이션은 밀어넣기만 한다"
+
+51만 건의 데이터를 정제할 때 가장 큰 병목은 **중복 탐지**입니다. 애플리케이션에서 `Counter`로 중복을 찾으면 전체 데이터를 메모리에 올려야 하고, 이미 DB에 있는 데이터와의 중복도 별도 조회가 필요합니다.
+
+이 문제를 **MySQL UNIQUE INDEX + INSERT IGNORE**로 해결했습니다:
+- 애플리케이션은 검증된 데이터를 **조회 없이 바로 INSERT**
+- DB가 UNIQUE 제약으로 중복을 자동 거부하고, `rowcount`로 실제 적재 건수를 반환
+- 건별 INSERT 재시도 루프가 없으므로 **DB 호출 횟수 = 청크 수**
+
+### 읽기: "전체를 메모리에 올리지 않는다"
+
+MongoDB에서 원본 데이터를 조회할 때 `list[dict]`로 반환하면 10만 건이 한 번에 메모리에 올라갑니다. 이를 **Iterator(cursor 스트리밍)**로 변경하여, 5,000건 청크 단위로 읽고 → 정제하고 → 적재하는 사이클을 반복합니다. 메모리에는 항상 청크 크기만큼만 유지됩니다.
+
+### 상태 관리: "불필요한 DB 호출을 줄인다"
+
+진행률을 청크마다 MongoDB에 upsert하면 10만 건 / 5,000청크 = 20번 × 3 Phase = **60번의 upsert**가 발생합니다. Phase 완료 시 1번만 갱신하도록 변경하여 **3번으로 축소**했습니다.
+
+### 데이터 격리: "삭제하지 않고 쌓는다"
+
+기존에는 `DELETE ALL → INSERT ALL`로 재분석 시 기존 데이터를 삭제했습니다. 이는 분석 중 실패하면 MySQL이 빈 상태로 남는 위험이 있고, 과거 분석 이력도 사라집니다. 모든 테이블에 `task_id` 컬럼을 추가하여 **삭제 없이 task별로 격리 조회**합니다.
+
+### 검색: "대용량 뒤쪽 페이지에서도 일정한 성능"
+
+`OFFSET 16000`은 앞의 16,000건을 읽고 버려야 합니다. cursor 기반 페이징(`WHERE id > after`)을 도입하여 인덱스로 바로 접근합니다. offset과 cursor 두 방식을 동시 지원하되, 동시 사용 시 400 에러로 거부합니다.
 
 ### 성능 수치
 
@@ -191,14 +206,31 @@ Rejection은 `task_id` + `stage` + `reason` + `source_id` + `field`로 구조화
 
 ## 확장 가능성
 
-| 영역 | 현재 | 확장 방향 |
-|---|---|---|
-| **검색 엔진** | MySQL 복합 인덱스 + QueryBuilder | Elasticsearch — `DataSearchRepository` 구현체만 교체 |
-| **실시간 진행률** | Phase 단위 폴링 | WebSocket/SSE 실시간 푸시 |
-| **Phase 추가** | PhaseRunnerProvider 등록 | 새 PhaseRunner 구현 + Provider 등록 |
-| **Rejection 집계** | 건건이 저장 + API 필터링 | 별도 배치 스케줄러로 Summary 집계 |
-| **크로스 저장소 일관성** | resume 보상 패턴 | 2PC 또는 Saga 패턴 |
-| **중복 요청 방어** | 진행 중 Task 거부 | 멱등키, 파일 해시 기반 |
+현재 구현에서 **Port 추상화와 Provider 패턴**을 통해 의도적으로 확장 포인트를 남겨둔 부분입니다.
+
+### 검색 고도화
+
+현재 MySQL 복합 인덱스 + QueryBuilder로 검색하고 있으나, 데이터가 수백만 건 이상이거나 복합 조건이 더 복잡해지면 **Elasticsearch** 도입을 고려합니다. `DataSearchRepository` Port가 추상화되어 있으므로 구현체만 교체하면 됩니다.
+
+### Outbox 폴링 → CDC (Change Data Capture)
+
+현재는 Celery Beat가 5초마다 Outbox 컬렉션을 폴링합니다. 프로덕션에서는 MongoDB의 **Change Stream**(CDC)으로 Outbox 변경을 실시간 감지하고, Kafka 같은 메시지 브로커에 이벤트를 발행하는 구조로 전환합니다. Outbox 도메인 모델과 Application 서비스 코드는 그대로 유지되며, Adapter-In만 교체하면 됩니다.
+
+### 실시간 진행률
+
+현재 Phase 단위 폴링(`GET /analyze/{id}`)으로 진행률을 확인합니다. WebSocket 또는 SSE(Server-Sent Events)를 도입하면 클라이언트에 실시간으로 푸시할 수 있습니다.
+
+### Phase 추가
+
+새로운 정제 단계가 추가될 때 `PhaseRunner`를 구현하고 `PhaseRunnerProvider`에 등록하면 됩니다. `PipelineService`의 오케스트레이션 코드는 변경하지 않습니다.
+
+### Rejection 집계
+
+현재 Rejection을 건건이 저장하고 API로 필터링합니다. 데이터가 대량이면 별도 배치 스케줄러가 `task_id + stage + reason`별로 Summary를 집계하여 대시보드에 활용할 수 있습니다.
+
+### 크로스 저장소 일관성
+
+현재 MongoDB(원본) → MySQL(정제) 간 일관성은 resume 보상 패턴으로 처리합니다. 프로덕션에서 더 강한 보장이 필요하면 2PC 또는 Saga 패턴으로 확장할 수 있습니다.
 
 ---
 

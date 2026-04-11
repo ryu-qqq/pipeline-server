@@ -1,27 +1,10 @@
-"""MySQL Repository 테스트 — SQLite in-memory DB 사용
+"""MySQL Repository 테스트 — MySQL testcontainer 사용
 
-주의: prefix_with("IGNORE")는 MySQL 전용이므로,
-Selection/OddTag/Label의 save_all은 add_all + flush 방식으로 테스트한다.
-Rejection은 원래 add_all 방식을 사용하므로 그대로 테스트한다.
+INSERT IGNORE, 페이지네이션, 필터링 등 MySQL 고유 동작을 실제 DB에서 검증한다.
 """
 
-from datetime import datetime
-
-from sqlalchemy import insert
-
-from app.adapter.outbound.mysql.entities import (
-    LabelEntity,
-    OddTagEntity,
-    RejectionEntity,
-    SelectionEntity,
-)
-from app.adapter.outbound.mysql.mappers import (
-    LabelMapper,
-    OddTagMapper,
-    RejectionMapper,
-    SelectionMapper,
-)
 from app.adapter.outbound.mysql.repositories import (
+    SqlDataSearchRepository,
     SqlLabelRepository,
     SqlOddTagRepository,
     SqlRejectionRepository,
@@ -35,7 +18,7 @@ from app.domain.enums import (
     TimeOfDay,
     Weather,
 )
-from app.domain.models import RejectionCriteria
+from app.domain.models import DataSearchCriteria, RejectionCriteria
 
 from tests.adapter.conftest import (
     TASK_ID,
@@ -46,39 +29,19 @@ from tests.adapter.conftest import (
 )
 
 
-# === 헬퍼: SQLite 호환 직접 insert ===
-
-
-def _insert_selection(session, selection):
-    """SQLite에서 prefix_with("IGNORE") 대신 직접 insert한다."""
-    d = SelectionMapper.to_dict(selection)
-    session.execute(insert(SelectionEntity).values(**d))
-    session.flush()
-
-
-def _insert_odd_tag(session, odd_tag):
-    d = OddTagMapper.to_dict(odd_tag)
-    session.execute(insert(OddTagEntity).values(**d))
-    session.flush()
-
-
-def _insert_label(session, label):
-    d = LabelMapper.to_dict(label)
-    session.execute(insert(LabelEntity).values(**d))
-    session.flush()
-
-
 # === SqlSelectionRepository ===
 
 
 class TestSqlSelectionRepository:
-    def test_find_by_id(self, db_session):
-        selection = make_selection(video_id=100)
-        _insert_selection(db_session, selection)
-
+    def test_save_all_and_find_by_id(self, db_session):
+        """save_all 후 find_by_id로 조회한다"""
         repo = SqlSelectionRepository(db_session)
-        found = repo.find_by_id(100)
+        selection = make_selection(video_id=100)
 
+        inserted = repo.save_all([selection])
+        assert inserted == 1
+
+        found = repo.find_by_id(100)
         assert found is not None
         assert found.id.value == 100
         assert found.task_id == TASK_ID
@@ -88,28 +51,37 @@ class TestSqlSelectionRepository:
         assert repo.find_by_id(9999) is None
 
     def test_find_all_ids_by_task(self, db_session):
-        for vid in [1, 2, 3]:
-            _insert_selection(db_session, make_selection(video_id=vid))
-        _insert_selection(db_session, make_selection(video_id=99, task_id="other-task"))
-
         repo = SqlSelectionRepository(db_session)
-        ids = repo.find_all_ids_by_task(TASK_ID)
+        repo.save_all([make_selection(video_id=v) for v in [1, 2, 3]])
+        repo.save_all([make_selection(video_id=99, task_id="other-task")])
 
+        ids = repo.find_all_ids_by_task(TASK_ID)
         assert ids == {1, 2, 3}
+
+    def test_save_all_insert_ignore_중복_무시(self, db_session):
+        """동일 video_id를 두 번 save_all하면 중복은 무시된다 (INSERT IGNORE)"""
+        repo = SqlSelectionRepository(db_session)
+
+        first = repo.save_all([make_selection(video_id=10)])
+        assert first == 1
+
+        second = repo.save_all([make_selection(video_id=10)])
+        assert second == 0  # 중복이므로 0건 적재
 
 
 # === SqlOddTagRepository ===
 
 
 class TestSqlOddTagRepository:
-    def test_find_by_video_id(self, db_session):
-        # OddTag는 video_id로 Selection과 연결
-        _insert_selection(db_session, make_selection(video_id=10))
-        _insert_odd_tag(db_session, make_odd_tag(video_id=10, weather=Weather.RAINY))
+    def test_save_all_and_find_by_video_id(self, db_session):
+        sel_repo = SqlSelectionRepository(db_session)
+        sel_repo.save_all([make_selection(video_id=10)])
 
-        repo = SqlOddTagRepository(db_session)
-        found = repo.find_by_video_id(10)
+        odd_repo = SqlOddTagRepository(db_session)
+        inserted = odd_repo.save_all([make_odd_tag(video_id=10, weather=Weather.RAINY)])
+        assert inserted == 1
 
+        found = odd_repo.find_by_video_id(10)
         assert found is not None
         assert found.video_id.value == 10
         assert found.weather == Weather.RAINY
@@ -119,40 +91,58 @@ class TestSqlOddTagRepository:
         assert repo.find_by_video_id(9999) is None
 
     def test_find_all_video_ids_by_task(self, db_session):
+        sel_repo = SqlSelectionRepository(db_session)
+        odd_repo = SqlOddTagRepository(db_session)
+
         for vid in [1, 2, 3]:
-            _insert_selection(db_session, make_selection(video_id=vid))
-            _insert_odd_tag(db_session, make_odd_tag(odd_id=vid, video_id=vid))
+            sel_repo.save_all([make_selection(video_id=vid)])
+            odd_repo.save_all([make_odd_tag(odd_id=vid, video_id=vid)])
 
-        repo = SqlOddTagRepository(db_session)
-        ids = repo.find_all_video_ids_by_task(TASK_ID)
-
+        ids = odd_repo.find_all_video_ids_by_task(TASK_ID)
         assert ids == {1, 2, 3}
+
+    def test_save_all_insert_ignore_중복_무시(self, db_session):
+        """동일 video_id의 OddTag를 두 번 save_all하면 중복은 무시된다"""
+        sel_repo = SqlSelectionRepository(db_session)
+        sel_repo.save_all([make_selection(video_id=20)])
+
+        odd_repo = SqlOddTagRepository(db_session)
+        first = odd_repo.save_all([make_odd_tag(video_id=20)])
+        assert first == 1
+
+        second = odd_repo.save_all([make_odd_tag(odd_id=99, video_id=20)])
+        assert second == 0
 
 
 # === SqlLabelRepository ===
 
 
 class TestSqlLabelRepository:
-    def test_find_all_by_video_id(self, db_session):
-        _insert_selection(db_session, make_selection(video_id=50))
-        _insert_label(db_session, make_label(video_id=50, object_class=ObjectClass.CAR))
-        _insert_label(db_session, make_label(video_id=50, object_class=ObjectClass.PEDESTRIAN))
+    def test_save_all_and_find_all_by_video_id(self, db_session):
+        sel_repo = SqlSelectionRepository(db_session)
+        sel_repo.save_all([make_selection(video_id=50)])
 
-        repo = SqlLabelRepository(db_session)
-        labels = repo.find_all_by_video_id(50)
+        label_repo = SqlLabelRepository(db_session)
+        inserted = label_repo.save_all([
+            make_label(video_id=50, object_class=ObjectClass.CAR),
+            make_label(video_id=50, object_class=ObjectClass.PEDESTRIAN),
+        ])
+        assert inserted == 2
 
+        labels = label_repo.find_all_by_video_id(50)
         assert len(labels) == 2
         classes = {lb.object_class for lb in labels}
         assert classes == {ObjectClass.CAR, ObjectClass.PEDESTRIAN}
 
     def test_find_all_video_ids_by_task(self, db_session):
+        sel_repo = SqlSelectionRepository(db_session)
+        label_repo = SqlLabelRepository(db_session)
+
         for vid in [10, 20, 30]:
-            _insert_selection(db_session, make_selection(video_id=vid))
-            _insert_label(db_session, make_label(video_id=vid))
+            sel_repo.save_all([make_selection(video_id=vid)])
+            label_repo.save_all([make_label(video_id=vid)])
 
-        repo = SqlLabelRepository(db_session)
-        ids = repo.find_all_video_ids_by_task(TASK_ID)
-
+        ids = label_repo.find_all_video_ids_by_task(TASK_ID)
         assert ids == {10, 20, 30}
 
 
@@ -241,6 +231,39 @@ class TestSqlRejectionRepository:
 
         criteria = RejectionCriteria(task_id="non-existent")
         results, total = repo.search(criteria)
+
+        assert total == 0
+        assert results == []
+
+
+# === SqlDataSearchRepository ===
+
+
+class TestSqlDataSearchRepository:
+    def test_search_통합_결과_조합(self, db_session):
+        """Selection + OddTag + Label이 올바르게 조합되어 반환된다"""
+        sel_repo = SqlSelectionRepository(db_session)
+        odd_repo = SqlOddTagRepository(db_session)
+        label_repo = SqlLabelRepository(db_session)
+
+        sel_repo.save_all([make_selection(video_id=1)])
+        odd_repo.save_all([make_odd_tag(video_id=1, weather=Weather.SUNNY)])
+        label_repo.save_all([make_label(video_id=1, object_class=ObjectClass.CAR)])
+
+        search_repo = SqlDataSearchRepository(db_session)
+        results, total = search_repo.search(DataSearchCriteria(task_id=TASK_ID))
+
+        assert total == 1
+        result = results[0]
+        assert result.selection.id.value == 1
+        assert result.odd_tag is not None
+        assert result.odd_tag.weather == Weather.SUNNY
+        assert len(result.labels) == 1
+        assert result.labels[0].object_class == ObjectClass.CAR
+
+    def test_search_빈_결과(self, db_session):
+        search_repo = SqlDataSearchRepository(db_session)
+        results, total = search_repo.search(DataSearchCriteria(task_id="non-existent"))
 
         assert total == 0
         assert results == []
