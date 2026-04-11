@@ -112,29 +112,53 @@ docker compose down -v
 
 ## 방어적 처리
 
-| 예외 상황 | 처리 방식 |
+### API 레벨
+
+| HTTP | 상황 | 처리 |
+|---|---|---|
+| **409** | 이미 진행 중인 분석 작업이 존재 | `ConflictError` — 중복 요청 차단 |
+| **400** | 파일 없음, JSON 깨짐, CSV 파싱 실패 | `DataNotFoundError`, `InvalidFormatError` |
+| **400** | page + after 동시 요청 | Pydantic `model_validator`로 차단 |
+| **400** | 유효하지 않은 Enum 값 (weather=tornado) | FastAPI 자동 검증 |
+| **400** | 존재하지 않는 task_id 조회 | `DataNotFoundError` |
+| **all** | 모든 에러 응답 | RFC 7807 `ProblemDetail` 형식 통일 |
+
+### 정제 파이프라인 레벨
+
+| 상황 | 처리 |
 |---|---|
-| V1/V2 스키마 혼재 | `SelectionRefiner`가 스키마 자동 감지 (sensor 필드 유무) |
-| 필드 누락/잘못된 값 | 필드별 에러 수집 — 한 row에서 에러 3개면 Rejection 3건 |
-| 중복 데이터 | MySQL UNIQUE INDEX + INSERT IGNORE — DB가 중복 탐지 |
-| 파일 없음/JSON 깨짐 | `DataNotFoundError`, `InvalidFormatError` → 400 |
-| 중복 분석 요청 | 진행 중인 Task 존재 시 `ConflictError` → 409 |
-| 파이프라인 중간 실패 | `last_completed_phase` 기록 → 재시도 시 완료된 Phase 건너뜀 (resume) |
-| Outbox 발행 실패 | PROCESSING 상태 유지 → 좀비 복구 스케줄러(1분)가 PENDING으로 복구 |
-| RFC 7807 에러 응답 | 모든 에러가 `ProblemDetail` 형식으로 통일 |
+| **V1/V2 스키마 혼재** | `SelectionRefiner`가 `sensor` 필드 유무로 자동 감지. V1(섭씨) / V2(화씨→섭씨 변환) |
+| **필드별 에러 수집** | 한 row에서 에러가 여러 개면 **에러별로 각각 Rejection 생성** (첫 에러만 잡히지 않음) |
+| **중복 데이터** | MySQL `UNIQUE INDEX` + `INSERT IGNORE` — DB가 중복을 탐지하고 rowcount로 건수 파악 |
+| **파이프라인 중간 실패** | `last_completed_phase`에 체크포인트 기록 → Celery 재시도 시 완료된 Phase 건너뜀 |
+| **Outbox 발행 실패** | PROCESSING 상태 유지 → 좀비 복구 스케줄러(1분)가 PENDING으로 복구 또는 FAILED 처리 |
 
 ### 거부 사유 분류 체계
 
-| Reason | 설명 | 예시 |
+Rejection은 `task_id` + `stage` + `reason` + `source_id` + `field`로 구조화하여, **어떤 작업의 어떤 단계에서 어떤 원본의 어떤 필드가 왜 실패했는지** 추적할 수 있습니다.
+
+**스키마/포맷 오류**
+
+| Reason | 발생 단계 | 설명 |
 |---|---|---|
-| `unknown_schema` | 인식 불가 스키마 | V1도 V2도 아닌 JSON |
-| `invalid_format` | 필드 파싱 실패 | video_id가 문자열 |
-| `missing_required_field` | 필수 필드 누락 | weather 없음 |
-| `invalid_enum_value` | 허용되지 않은 Enum | weather=tornado |
-| `fractional_obj_count` | 객체 수 소수점 | obj_count=5.5 |
-| `negative_obj_count` | 객체 수 음수 | obj_count=-1 |
-| `duplicate_tagging` | ODD 태깅 중복 | 동일 video_id |
-| `duplicate_label` | 라벨 중복 | 동일 video_id + class |
+| `unknown_schema` | Selection | V1(flat)도 V2(sensor)도 아닌 인식 불가 구조 |
+| `invalid_format` | 전 단계 | 필드 값 파싱 실패 (video_id가 문자열, 날짜 형식 오류 등) |
+| `missing_required_field` | 전 단계 | 필수 필드 누락 (weather, time_of_day 등) |
+
+**값 범위 오류**
+
+| Reason | 발생 단계 | 설명 |
+|---|---|---|
+| `invalid_enum_value` | ODD, Label | 허용 범위 밖의 Enum 값 (weather=tornado) |
+| `fractional_obj_count` | Label | 객체 수가 정수가 아님 (obj_count=5.5) |
+| `negative_obj_count` | Label | 객체 수가 음수 (obj_count=-1) |
+
+**중복 오류**
+
+| Reason | 발생 단계 | 설명 |
+|---|---|---|
+| `duplicate_tagging` | ODD | 동일 task + video_id에 태깅 2건 이상 (UNIQUE 위반) |
+| `duplicate_label` | Label | 동일 task + video_id + object_class 조합 중복 (UNIQUE 위반) |
 
 ---
 
@@ -175,8 +199,6 @@ docker compose down -v
 | **Rejection 집계** | 건건이 저장 + API 필터링 | 별도 배치 스케줄러로 Summary 집계 |
 | **크로스 저장소 일관성** | resume 보상 패턴 | 2PC 또는 Saga 패턴 |
 | **중복 요청 방어** | 진행 중 Task 거부 | 멱등키, 파일 해시 기반 |
-
----
 
 ---
 

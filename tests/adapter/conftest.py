@@ -1,12 +1,17 @@
-"""adapter 레이어 테스트 공통 fixture"""
+"""adapter 레이어 테스트 공통 fixture
 
+MySQL testcontainer를 사용하여 실제 MySQL에서 Repository/QueryBuilder를 검증한다.
+Router 테스트는 Mock 서비스를 사용하므로 DB 의존 없음.
+"""
+
+import os
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from testcontainers.mysql import MySqlContainer
 
 from app.adapter.outbound.mysql.database import Base
 from app.rest_dependencies import (
@@ -35,37 +40,56 @@ from app.domain.value_objects import (
 from app.main import app
 
 
-# === SQLite in-memory DB ===
+# === MySQL Testcontainer ===
 
 
-@pytest.fixture()
-def db_engine():
-    """SQLite in-memory 엔진을 생성한다."""
-    engine = create_engine("sqlite:///:memory:")
+@pytest.fixture(scope="session")
+def mysql_container():
+    """MySQL 8.0 테스트 컨테이너 — adapter 테스트 전용"""
+    container = MySqlContainer(
+        image="mysql:8.0",
+        username="test",
+        password="test",
+        dbname="adapter_test",
+    )
+    with container:
+        yield container
 
-    # SQLite에서 외래 키 활성화
-    @event.listens_for(engine, "connect")
-    def _set_sqlite_pragma(dbapi_conn, _):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
 
+@pytest.fixture(scope="session")
+def db_engine(mysql_container):
+    """MySQL 엔진 — 세션 동안 한 번만 생성한다."""
+    import app.adapter.outbound.mysql.entities  # noqa: F401
+
+    url = mysql_container.get_connection_url()
+    if "pymysql" not in url:
+        url = url.replace("mysql://", "mysql+pymysql://")
+
+    engine = create_engine(url, echo=False)
     Base.metadata.create_all(bind=engine)
     yield engine
-    Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
 
+@pytest.fixture(scope="session")
+def _session_factory(db_engine):
+    return sessionmaker(bind=db_engine)
+
+
 @pytest.fixture()
-def db_session(db_engine):
-    """테스트 단위 DB 세션을 제공한다."""
-    _SessionLocal = sessionmaker(bind=db_engine)
-    session = _SessionLocal()
-    try:
-        yield session
-    finally:
-        session.rollback()
-        session.close()
+def db_session(_session_factory, db_engine):
+    """테스트 단위 DB 세션 — 테스트 후 데이터를 삭제한다."""
+    session = _session_factory()
+    yield session
+    session.rollback()
+    session.close()
+    # 테이블 데이터 정리 (다음 테스트 격리)
+    with db_engine.connect() as conn:
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+        for table in ("rejections", "labels", "odd_tags", "selections"):
+            conn.execute(text(f"DELETE FROM {table}"))
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+        conn.commit()
 
 
 # === FastAPI TestClient ===
