@@ -70,7 +70,7 @@ class DataSearchQueryBuilder:
         if not any([c.object_class, c.min_obj_count, c.min_confidence]):
             return stmt
 
-        conditions = []
+        conditions = [LabelEntity.video_id == SelectionEntity.id]
         if c.object_class is not None:
             conditions.append(LabelEntity.object_class == c.object_class.value)
         if c.min_obj_count is not None:
@@ -78,8 +78,8 @@ class DataSearchQueryBuilder:
         if c.min_confidence is not None:
             conditions.append(LabelEntity.avg_confidence >= c.min_confidence)
 
-        subquery = select(LabelEntity.video_id).where(and_(*conditions))
-        stmt = stmt.where(SelectionEntity.id.in_(subquery))
+        exists_subquery = select(LabelEntity.id).where(and_(*conditions)).exists()
+        stmt = stmt.where(exists_subquery)
 
         return stmt
 

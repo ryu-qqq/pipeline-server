@@ -4,7 +4,6 @@ from app.application.phase_runners import PhaseRunnerProvider
 from app.domain.enums import Stage
 from app.domain.models import AnalysisResult, AnalyzeTask
 from app.domain.ports import (
-    CacheRepository,
     LabelRepository,
     OddTagRepository,
     SelectionRepository,
@@ -24,14 +23,12 @@ class PipelineService:
         selection_repo: SelectionRepository,
         odd_tag_repo: OddTagRepository,
         label_repo: LabelRepository,
-        cache_repo: CacheRepository,
         phase_runner_provider: PhaseRunnerProvider,
     ) -> None:
         self._task_repo = task_repo
         self._selection_repo = selection_repo
         self._odd_tag_repo = odd_tag_repo
         self._label_repo = label_repo
-        self._cache_repo = cache_repo
         self._phase_runner_provider = phase_runner_provider
 
     def execute(self, task_id: str) -> None:
@@ -50,7 +47,6 @@ class PipelineService:
 
             task = task.complete_with(result_dict)
             self._task_repo.save(task)
-            self._cache_repo.invalidate_all()
 
             logger.info("파이프라인 완료: task_id=%s", task_id)
 

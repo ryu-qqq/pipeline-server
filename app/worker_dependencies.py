@@ -24,8 +24,6 @@ from app.adapter.outbound.mysql.repositories import (
     SqlRejectionRepository,
     SqlSelectionRepository,
 )
-from app.adapter.outbound.redis.client import get_redis
-from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.outbox_relay_service import OutboxRelayService
 from app.application.phase_runners import (
     LabelPhaseRunner,
@@ -71,7 +69,6 @@ def build_pipeline_service(db: Database, session: Session) -> PipelineService:
         selection_repo=selection_repo,
         odd_tag_repo=odd_tag_repo,
         label_repo=label_repo,
-        cache_repo=RedisCacheRepository(get_redis()),
         phase_runner_provider=provider,
     )
 

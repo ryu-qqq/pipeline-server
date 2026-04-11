@@ -1,13 +1,12 @@
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.application.phase_runners import PhaseRunnerProvider
 from app.application.pipeline_service import PipelineService
 from app.domain.enums import Stage, TaskStatus
-from app.domain.models import AnalysisResult, AnalyzeTask
+from app.domain.models import AnalyzeTask
 from app.domain.ports import (
-    CacheRepository,
     LabelRepository,
     OddTagRepository,
     SelectionRepository,
@@ -37,23 +36,17 @@ def label_repo():
 
 
 @pytest.fixture
-def cache_repo():
-    return MagicMock(spec=CacheRepository)
-
-
-@pytest.fixture
 def phase_provider():
     return MagicMock(spec=PhaseRunnerProvider)
 
 
 @pytest.fixture
-def service(task_repo, selection_repo, odd_tag_repo, label_repo, cache_repo, phase_provider):
+def service(task_repo, selection_repo, odd_tag_repo, label_repo, phase_provider):
     return PipelineService(
         task_repo=task_repo,
         selection_repo=selection_repo,
         odd_tag_repo=odd_tag_repo,
         label_repo=label_repo,
-        cache_repo=cache_repo,
         phase_runner_provider=phase_provider,
     )
 
@@ -90,7 +83,7 @@ def _mock_runner(result: StageResult):
 
 class TestPipelineServiceExecute:
 
-    def test_정상_실행_전체_흐름(self, service, task_repo, selection_repo, odd_tag_repo, label_repo, cache_repo, phase_provider):
+    def test_정상_실행_전체_흐름(self, service, task_repo, selection_repo, odd_tag_repo, label_repo, phase_provider):
         task = _make_task()
         task_repo.find_by_id.return_value = task
 
@@ -132,8 +125,6 @@ class TestPipelineServiceExecute:
         last_save = task_repo.save.call_args_list[-1][0][0]
         assert last_save.status == TaskStatus.COMPLETED
         assert last_save.result is not None
-
-        cache_repo.invalidate_all.assert_called_once()
 
     def test_실패시_fail_with_save(self, service, task_repo, phase_provider, selection_repo):
         task = _make_task()
@@ -243,7 +234,7 @@ class TestPipelineServiceExecute:
         assert result.auto_labeling == label_result
 
     def test_build_result_교집합_없음(
-        self, service, task_repo, selection_repo, odd_tag_repo, label_repo, cache_repo, phase_provider
+        self, service, task_repo, selection_repo, odd_tag_repo, label_repo, phase_provider
     ):
         """selection_ids와 odd/label_ids의 교집합이 0이면 fully_linked=0, partial=전체"""
         task = _make_task()
@@ -280,7 +271,7 @@ class TestPipelineServiceExecute:
         assert result.partial == 3
 
     def test_build_result_전체_일치(
-        self, service, task_repo, selection_repo, odd_tag_repo, label_repo, cache_repo, phase_provider
+        self, service, task_repo, selection_repo, odd_tag_repo, label_repo, phase_provider
     ):
         """모든 ID가 동일하면 fully_linked=전체, partial=0"""
         task = _make_task()

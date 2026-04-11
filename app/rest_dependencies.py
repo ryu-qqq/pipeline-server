@@ -8,34 +8,35 @@ from sqlalchemy.orm import Session
 
 from app.adapter.outbound.identity.generator import UUIDv7Generator
 from app.adapter.outbound.mongodb.client import get_mongo_client, get_mongo_db
-from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository, MongoRawDataRepository, MongoTaskRepository
+from app.adapter.outbound.mongodb.repositories import (
+    MongoOutboxRepository,
+    MongoRawDataRepository,
+    MongoTaskRepository,
+)
 from app.adapter.outbound.mongodb.transaction import MongoTransactionManager
 from app.adapter.outbound.mysql.database import SessionLocal
 from app.adapter.outbound.mysql.repositories import (
+    SqlDataSearchRepository,
     SqlLabelRepository,
     SqlOddTagRepository,
     SqlRejectionRepository,
-    SqlDataSearchRepository,
     SqlSelectionRepository,
 )
-from app.adapter.outbound.redis.client import get_redis
-from app.adapter.outbound.redis.repositories import RedisCacheRepository
 from app.application.analysis_service import AnalysisService
 from app.application.data_ingestor import DataIngestor
+from app.application.data_read_service import DataReadService
 from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
 from app.application.rejection_read_service import RejectionReadService
-from app.application.data_read_service import DataReadService
 from app.application.task_read_service import TaskReadService
 from app.domain.enums import FileType
 from app.domain.ports import (
-    CacheRepository,
+    DataSearchRepository,
     IdGenerator,
     LabelRepository,
     OddTagRepository,
     OutboxRepository,
     RawDataRepository,
     RejectionRepository,
-    DataSearchRepository,
     SelectionRepository,
     TaskRepository,
     TransactionManager,
@@ -112,13 +113,6 @@ def get_outbox_repo(db: Database = Depends(get_db)) -> OutboxRepository:
 def get_tx_manager() -> TransactionManager:
     """MongoDB 트랜잭션 매니저를 반환한다."""
     return MongoTransactionManager(get_mongo_client())
-
-
-# === Redis Cache ===
-
-
-def get_cache_repo() -> CacheRepository:
-    return RedisCacheRepository(get_redis())
 
 
 # === ID Generator ===

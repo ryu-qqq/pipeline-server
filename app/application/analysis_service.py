@@ -2,8 +2,6 @@ import logging
 
 from app.application.data_ingestor import DataIngestor
 from app.application.decorators import transactional
-from app.domain.enums import TaskStatus
-from app.domain.exceptions import ConflictError
 from app.domain.models import AnalyzeTask, OutboxMessage
 from app.domain.ports import IdGenerator, OutboxRepository, TaskRepository, TransactionManager
 
@@ -33,11 +31,8 @@ class AnalysisService:
 
         @transactional: 적재 + Task 저장 + Outbox 저장을
         하나의 트랜잭션으로 묶어 부분 실패 시 전체 롤백을 보장한다.
+        create_if_not_active로 동시 요청을 원자적으로 방지한다.
         """
-        active = self._task_repo.find_by_statuses([TaskStatus.PENDING, TaskStatus.PROCESSING])
-        if active is not None:
-            raise ConflictError(f"이미 진행 중인 작업이 있습니다: {active.task_id}")
-
         ingestion = self._data_ingestor.ingest()
 
         task = AnalyzeTask.create_new(
@@ -51,7 +46,7 @@ class AnalysisService:
             task_id=ingestion.task_id,
         )
 
-        self._task_repo.save(task)
+        self._task_repo.create_if_not_active(task)
         self._outbox_repo.save(outbox)
 
         logger.info("분석 접수: task_id=%s", ingestion.task_id)

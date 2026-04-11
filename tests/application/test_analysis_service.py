@@ -6,9 +6,8 @@ from app.application.analysis_service import AnalysisService
 from app.application.data_ingestor import DataIngestor
 from app.domain.enums import TaskStatus
 from app.domain.exceptions import ConflictError
-from app.domain.models import AnalyzeTask
 from app.domain.ports import IdGenerator, OutboxRepository, TaskRepository, TransactionManager
-from app.domain.value_objects import IngestionResult, StageProgress
+from app.domain.value_objects import IngestionResult
 
 
 @pytest.fixture
@@ -52,7 +51,6 @@ def service(data_ingestor, id_generator, task_repo, outbox_repo, tx_manager):
 class TestAnalysisServiceSubmit:
 
     def test_정상_흐름_ingest_task_outbox_save(self, service, data_ingestor, id_generator, task_repo, outbox_repo):
-        task_repo.find_by_statuses.return_value = None
         id_generator.generate.return_value = "outbox-id-1"
         data_ingestor.ingest.return_value = IngestionResult(
             task_id="task-1",
@@ -65,10 +63,10 @@ class TestAnalysisServiceSubmit:
 
         assert result == "task-1"
         data_ingestor.ingest.assert_called_once()
-        task_repo.save.assert_called_once()
+        task_repo.create_if_not_active.assert_called_once()
         outbox_repo.save.assert_called_once()
 
-        saved_task = task_repo.save.call_args[0][0]
+        saved_task = task_repo.create_if_not_active.call_args[0][0]
         assert saved_task.task_id == "task-1"
         assert saved_task.status == TaskStatus.PENDING
         assert saved_task.selection_progress.total == 100
@@ -79,36 +77,29 @@ class TestAnalysisServiceSubmit:
         assert saved_outbox.message_type == "ANALYZE"
         assert saved_outbox.payload == {"task_id": "task-1"}
 
-    def test_중복_요청시_ConflictError(self, service, task_repo):
-        existing = AnalyzeTask(
-            task_id="existing-task",
-            status=TaskStatus.PROCESSING,
-            selection_progress=StageProgress(total=10),
-            odd_tagging_progress=StageProgress(total=10),
-            auto_labeling_progress=StageProgress(total=10),
+    def test_중복_요청시_ConflictError(self, service, task_repo, data_ingestor, id_generator):
+        id_generator.generate.return_value = "outbox-id-1"
+        data_ingestor.ingest.return_value = IngestionResult(
+            task_id="task-1", selection_count=10, odd_count=10, label_count=10,
         )
-        task_repo.find_by_statuses.return_value = existing
+        task_repo.create_if_not_active.side_effect = ConflictError("이미 진행 중인 작업이 있습니다: existing-task")
 
         with pytest.raises(ConflictError, match="이미 진행 중인 작업"):
             service.submit()
 
-    def test_중복_요청시_ingest_호출되지_않음(self, service, task_repo, data_ingestor):
-        existing = AnalyzeTask(
-            task_id="existing-task",
-            status=TaskStatus.PENDING,
-            selection_progress=StageProgress(total=10),
-            odd_tagging_progress=StageProgress(total=10),
-            auto_labeling_progress=StageProgress(total=10),
+    def test_중복_요청시_outbox_save_호출되지_않음(self, service, task_repo, data_ingestor, id_generator, outbox_repo):
+        id_generator.generate.return_value = "outbox-id-1"
+        data_ingestor.ingest.return_value = IngestionResult(
+            task_id="task-1", selection_count=10, odd_count=10, label_count=10,
         )
-        task_repo.find_by_statuses.return_value = existing
+        task_repo.create_if_not_active.side_effect = ConflictError("이미 진행 중인 작업이 있습니다")
 
         with pytest.raises(ConflictError):
             service.submit()
 
-        data_ingestor.ingest.assert_not_called()
+        outbox_repo.save.assert_not_called()
 
     def test_트랜잭션_매니저_execute_호출됨(self, service, tx_manager, task_repo, data_ingestor, id_generator):
-        task_repo.find_by_statuses.return_value = None
         id_generator.generate.return_value = "outbox-id-1"
         data_ingestor.ingest.return_value = IngestionResult(
             task_id="task-1", selection_count=10, odd_count=10, label_count=10,

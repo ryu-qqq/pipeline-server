@@ -1,111 +1,16 @@
-"""통합 테스트 공통 fixture — testcontainers로 MySQL + MongoDB + Redis 컨테이너를 관리한다.
+"""통합 테스트 공통 fixture
 
-session 스코프로 컨테이너를 한 번만 띄우고, function 스코프로 데이터를 격리한다.
+컨테이너는 tests/conftest.py에서 session 스코프로 공유한다.
+이 파일에서는 환경변수 주입, DB 세션, 데이터 격리만 담당한다.
 """
 
+import contextlib
 import os
-import time
 
 import pytest
 from pymongo import MongoClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from testcontainers.core.container import DockerContainer
-from testcontainers.core.waiting_utils import wait_for_logs
-from testcontainers.mysql import MySqlContainer
-from testcontainers.redis import RedisContainer
-
-# === 컨테이너 (session 스코프 — 테스트 세션 동안 한 번만 생성) ===
-
-
-@pytest.fixture(scope="session")
-def mysql_container():
-    """MySQL 8.0 테스트 컨테이너"""
-    container = MySqlContainer(
-        image="mysql:8.0",
-        username="test",
-        password="test",
-        dbname="pipeline_test",
-    )
-    with container:
-        yield container
-
-
-@pytest.fixture(scope="session")
-def mongo_container():
-    """MongoDB 7.0 테스트 컨테이너 (replica set, 인증 없음)
-
-    트랜잭션을 위해 replica set으로 시작한다.
-    testcontainers의 MongoDbContainer는 인증을 강제하므로,
-    DockerContainer를 직접 사용하여 인증 없이 replica set 모드로 실행한다.
-
-    안정성 강화:
-    - 로그 대기 타임아웃 60초
-    - ping으로 서버 준비 확인 후 replica set 초기화
-    - TESTCONTAINERS_RYUK_DISABLED=true로 Ryuk 비활성화 권장
-    """
-    container = (
-        DockerContainer(image="mongo:7.0")
-        .with_exposed_ports(27017)
-        .with_command("--replSet rs0 --bind_ip_all")
-    )
-    with container:
-        wait_for_logs(container, "Waiting for connections", timeout=60)
-        _init_replica_set(container)
-        yield container
-
-
-def _init_replica_set(container: DockerContainer) -> None:
-    """MongoDB를 single-node replica set으로 초기화한다."""
-    import contextlib
-
-    from pymongo.errors import OperationFailure
-
-    host = container.get_container_host_ip()
-    port = container.get_exposed_port(27017)
-    client = MongoClient(
-        f"mongodb://{host}:{port}/?directConnection=true",
-        serverSelectionTimeoutMS=10000,
-        connectTimeoutMS=10000,
-    )
-
-    # ping으로 서버 준비 확인
-    for _ in range(30):
-        try:
-            client.admin.command("ping")
-            break
-        except Exception:
-            time.sleep(1)
-
-    with contextlib.suppress(OperationFailure):
-        client.admin.command(
-            "replSetInitiate",
-            {
-                "_id": "rs0",
-                "members": [{"_id": 0, "host": "localhost:27017"}],
-            },
-        )
-
-    # replica set이 PRIMARY로 전환될 때까지 대기
-    for _ in range(30):
-        try:
-            status = client.admin.command("replSetGetStatus")
-            if any(m.get("stateStr") == "PRIMARY" for m in status.get("members", [])):
-                break
-        except OperationFailure:
-            pass
-        time.sleep(1)
-
-    client.close()
-
-
-@pytest.fixture(scope="session")
-def redis_container():
-    """Redis 7.0 테스트 컨테이너"""
-    container = RedisContainer(image="redis:7.0")
-    with container:
-        yield container
-
 
 # === 환경변수 주입 (session 스코프 — 모듈 import 전에 환경변수 설정) ===
 
@@ -220,10 +125,8 @@ def _clean_mongo(mongo_db):
     """
     yield
     for coll_name in ("raw_data", "analyze_tasks", "outbox"):
-        try:
+        with contextlib.suppress(Exception):
             mongo_db[coll_name].delete_many({})
-        except Exception:
-            pass
 
 
 # === Redis ===
@@ -241,10 +144,8 @@ def redis_client(_set_env):
 def _clean_redis(redis_client):
     """각 테스트 후 Redis 데이터를 삭제한다."""
     yield
-    try:
+    with contextlib.suppress(Exception):
         redis_client.flushdb()
-    except Exception:
-        pass
 
 
 # === Repository Fixture ===
@@ -306,18 +207,11 @@ def outbox_repo(mongo_db):
     return MongoOutboxRepository(mongo_db)
 
 
-@pytest.fixture()
-def cache_repo(redis_client):
-    from app.adapter.outbound.redis.repositories import RedisCacheRepository
-
-    return RedisCacheRepository(redis_client)
-
-
 # === Service Fixture ===
 
 
 @pytest.fixture()
-def pipeline_service(db_session, mongo_db, redis_client, task_repo, cache_repo):
+def pipeline_service(db_session, mongo_db, redis_client, task_repo):
     """PipelineService — pipeline_task._build_pipeline_service 패턴을 따른다."""
     from app.adapter.outbound.mongodb.repositories import MongoRawDataRepository
     from app.adapter.outbound.mysql.repositories import (
@@ -375,7 +269,6 @@ def pipeline_service(db_session, mongo_db, redis_client, task_repo, cache_repo):
         selection_repo=sel_repo,
         odd_tag_repo=odd_repo,
         label_repo=lbl_repo,
-        cache_repo=cache_repo,
         phase_runner_provider=provider,
     )
 
@@ -408,10 +301,10 @@ def client(db_session, mongo_db, redis_client, mongo_client):
         SqlRejectionRepository,
         SqlSelectionRepository,
     )
-    from app.adapter.outbound.redis.repositories import RedisCacheRepository
     from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
+    from app.domain.enums import FileType
+    from app.main import app
     from app.rest_dependencies import (
-        get_cache_repo,
         get_db,
         get_db_session,
         get_label_repo,
@@ -425,8 +318,6 @@ def client(db_session, mongo_db, redis_client, mongo_client):
         get_task_repo,
         get_tx_manager,
     )
-    from app.domain.enums import FileType
-    from app.main import app
 
     def _db_session():
         yield db_session
@@ -445,9 +336,8 @@ def client(db_session, mongo_db, redis_client, mongo_client):
     app.dependency_overrides[get_task_repo] = lambda: MongoTaskRepository(mongo_db)
     app.dependency_overrides[get_outbox_repo] = lambda: MongoOutboxRepository(mongo_db)
     app.dependency_overrides[get_tx_manager] = lambda: MongoTransactionManager(mongo_client)
-    app.dependency_overrides[get_cache_repo] = lambda: RedisCacheRepository(redis_client)
 
-    # CsvFileLoader는 파일별로 다른 required_headers를 사용해야 하지만,
+    # CsvFileLoader는 파일별로 다른 required_headers를 사용��야 하지만,
     def _loader_provider():
         provider = FileLoaderProvider()
         provider.register(FileType.JSON, JsonFileLoader())

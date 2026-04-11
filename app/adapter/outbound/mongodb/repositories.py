@@ -6,10 +6,10 @@ from pymongo.database import Database
 from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, OutboxDocument, RawDataDocument
 from app.adapter.outbound.mongodb.mappers import OutboxDocumentMapper, TaskDocumentMapper
 from app.adapter.outbound.mongodb.transaction import get_current_session
-from app.domain.enums import Stage, TaskStatus
+from app.domain.enums import TaskStatus
+from app.domain.exceptions import ConflictError
 from app.domain.models import AnalyzeTask, OutboxCriteria, OutboxMessage
 from app.domain.ports import OutboxRepository, RawDataRepository, TaskRepository
-from app.domain.value_objects import StageProgress
 
 DEFAULT_BULK_INSERT_SIZE = 5000
 
@@ -86,6 +86,22 @@ class MongoTaskRepository(TaskRepository):
         task_doc = AnalyzeTaskDocument.from_dict(doc)
         return TaskDocumentMapper.to_domain(task_doc)
 
+    def create_if_not_active(self, task: AnalyzeTask) -> None:
+        """활성 작업이 없을 때만 생성한다.
+
+        findOneAndUpdate로 PENDING/PROCESSING 문서를 원자적으로 확인하고,
+        존재하면 ConflictError를 던진다.
+        """
+        session = get_current_session()
+        existing = self._collection.find_one_and_update(
+            {"status": {"$in": [TaskStatus.PENDING.value, TaskStatus.PROCESSING.value]}},
+            {"$set": {"_conflict_check": True}},
+            session=session,
+        )
+        if existing is not None:
+            raise ConflictError(f"이미 진행 중인 작업이 있습니다: {existing['_id']}")
+        self.save(task)
+
 
 class MongoOutboxRepository(OutboxRepository):
     """MongoDB Outbox 저장소 구현체"""
@@ -113,3 +129,5 @@ class MongoOutboxRepository(OutboxRepository):
             .limit(criteria.limit)
         )
         return [OutboxDocumentMapper.to_domain(OutboxDocument.from_dict(doc)) for doc in cursor]
+
+
