@@ -178,18 +178,6 @@ docker compose down -v
 
 ---
 
-## 테스트
-
-```
-tests/
-├── domain/              # 도메인 모델, Value Object 불변식
-├── application/         # Refiner, Service, Pipeline (Mock Repository)
-├── adapter/             # Router, Mapper, QueryBuilder, Repository (SQLite)
-└── integration/         # E2E 시나리오 (testcontainers: MySQL + MongoDB + Redis)
-```
-
-> 상세 테스트 전략은 [`docs/testing-strategy.md`](docs/testing-strategy.md)를 참조하세요.
-
 ---
 
 ## AI 활용
