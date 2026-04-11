@@ -3,22 +3,22 @@
 ## 1. 테스트 피라미드 개요
 
 ```
-         ╱  E2E (25)  ╲          ← Testcontainers (MySQL + MongoDB + Redis)
+         ╱  E2E (21)  ╲          ← Testcontainers (MySQL + MongoDB + Redis)
         ╱───────────────╲         ~12분, Docker 필요
        ╱  Adapter (56)   ╲       ← MySQL Testcontainer + TestClient Mock
       ╱───────────────────╲       ~7초
-     ╱  Application (92)   ╲     ← MagicMock(spec=ABC)
+     ╱  Application (107)  ╲     ← MagicMock(spec=ABC)
     ╱───────────────────────╲     ~0.08초
-   ╱     Domain (88)         ╲   ← 순수 Python, 외부 의존 없음
-  ╱───────────────────────────╲   ~0.02초
+   ╱     Domain (95)         ╲   ← 순수 Python, 외부 의존 없음
+  ╱───────────────────────────╲   ~0.03초
 ```
 
 | 레이어 | 테스트 수 | 비율 | 실행 시간 | DB |
 |--------|:--------:|:----:|:---------:|-----|
-| Domain | 88 | 32% | 0.02s | 없음 |
-| Application | 104 | 38% | 0.09s | Mock |
+| Domain | 95 | 34% | 0.03s | 없음 |
+| Application | 107 | 38% | 0.08s | Mock |
 | Adapter | 56 | 20% | ~7s | MySQL Testcontainer |
-| Integration (E2E) | 31 | 11% | ~13m | MySQL + MongoDB + Redis Testcontainer |
+| Integration (E2E) | 21 | 8% | ~13m | MySQL + MongoDB + Redis Testcontainer |
 | **합계** | **279** | 100% | | |
 
 단위 테스트(Domain + Application)만 실행하면 **0.1초**, Adapter 포함 시 **7초**, E2E 포함 시 **~14분**.
@@ -31,15 +31,15 @@
 **대상**: `app/domain/models.py`, `app/domain/value_objects.py`  
 **원칙**: 순수 Python만. Mock 없음, DB 없음, 외부 의존 없음.
 
-### test_value_objects.py — 39개
+### test_value_objects.py — 46개
 
 값 객체(VO)가 스스로 유효성을 보장하는지 검증한다.
 
 | 대상 | 시나리오 |
 |------|---------|
 | VideoId | 양수만 허용, 0과 음수 거부, int 동등성 비교, 해시 일관성 |
-| Temperature | 섭씨 -90~60도 범위 검증, 범위 초과 시 에러 발생, `from_celsius` 소수점 반올림, `from_fahrenheit` 화씨→섭씨 변환 정확성 (32°F=0°C, 100°F≈37.78°C), 변환 결과가 범위 밖이면 에러 |
-| Confidence | 0.0~1.0 범위 검증, 범위 밖 값 거부, `is_high` 기본/커스텀 임계값 판단, `is_low` 기본/커스텀 임계값 판단 |
+| Temperature | 섭씨 -90~60도 범위 검증, 범위 초과 시 에러 발생, `from_celsius` 소수점 반올림, `from_fahrenheit` 화씨→섭씨 변환 정확성 (32°F=0°C, 100°F≈37.78°C), 변환 결과가 범위 밖이면 에러, **NaN/Infinity/음의 무한대 거부, 화씨 입력의 NaN/Infinity 거부** |
+| Confidence | 0.0~1.0 범위 검증, 범위 밖 값 거부, `is_high` 기본/커스텀 임계값 판단, `is_low` 기본/커스텀 임계값 판단, **NaN/Infinity 거부** |
 | ObjectCount | 0 이상 정수만 허용, 음수 거부 시 전용 예외(NegativeCountError), `is_empty` 판단, 크기 비교 연산 |
 | WiperState | 와이퍼 레벨 0~3 범위 검증, 비활성 상태에서 레벨 양수 거부, `is_raining_likely` 판단 (활성+레벨2 이상), 다양한 조합(활성/비활성 × 레벨 있음/없음) |
 | SourcePath | 빈 문자열 거부, .mp4 이외 확장자 거부, `/raw/` 경로와 `/processed/` 경로 구분 |
@@ -62,7 +62,7 @@
 ### 실행
 
 ```bash
-pytest tests/domain/ -v    # 88개, ~0.02초
+pytest tests/domain/ -v    # 95개, ~0.03초
 ```
 
 ---
@@ -81,9 +81,9 @@ mock_task_repo = MagicMock(spec=TaskRepository)
 mock_outbox_repo = MagicMock(spec=OutboxRepository)
 ```
 
-### test_phase_runners.py — 28개
+### test_phase_runners.py — 31개
 
-정제 파이프라인의 핵심 엔진인 PhaseRunner의 스트리밍 처리, 중복 탐지, 진행률 추적을 검증한다.
+정제 파이프라인의 핵심 엔진인 PhaseRunner의 스트리밍 처리, 중복 탐지, 미참조 영상 거부, 진행률 추적을 검증한다.
 
 | 대상 | 시나리오 |
 |------|---------|
@@ -94,6 +94,7 @@ mock_outbox_repo = MagicMock(spec=OutboxRepository)
 | 중복 rejection 분류 | ODD_TAGGING Stage → DUPLICATE_TAGGING 사유, AUTO_LABELING Stage → DUPLICATE_LABEL 사유 |
 | _refine_chunk 분기 | 반환이 list[Rejection]이면 extend, 단일 Rejection이면 append, 도메인 모델이면 valid에 추가, 혼합 결과 올바른 분리 |
 | 진행률 갱신 | run() 완료 후 with_progress와 with_completed_phase 호출, task_repo.save 호출, 실패 포함 진행률 정확성 |
+| **UNLINKED_RECORD 거부** | **OddTag Phase에서 Selection에 없는 video_id → UNLINKED_RECORD 거부, Label Phase에서 동일, 모든 video_id가 유효하면 UNLINKED 거부 0건** |
 
 ### test_selection_refiner.py — 17개
 
@@ -143,7 +144,7 @@ Outbox 메시지 발행과 좀비 복구 흐름을 검증한다.
 
 | 대상 | 시나리오 |
 |------|---------|
-| 전체 흐름 | SELECTION→ODD_TAGGING→AUTO_LABELING 3단계 순차 실행, start_processing 저장 후 complete_with 저장, 캐시 무효화 호출 |
+| 전체 흐름 | SELECTION→ODD_TAGGING→AUTO_LABELING 3단계 순차 실행, start_processing 저장 후 complete_with 저장 |
 | 실패 처리 | runner에서 예외 발생 시 fail_with 호출, 에러 메시지 포함, FAILED 상태 저장 |
 | resume 로직 | SELECTION 완료 시 ODD_TAGGING+AUTO_LABELING만 실행, ODD_TAGGING 완료 시 AUTO_LABELING만 실행, 스킵된 Phase는 기존 progress에서 StageResult 생성 |
 | fully_linked 계산 | Selection∩OddTag∩Label 교집합이 0인 경우 (fully_linked=0, partial=전체), 전체 일치하는 경우 (fully_linked=전체, partial=0) |
@@ -154,7 +155,7 @@ Outbox 메시지 발행과 좀비 복구 흐름을 검증한다.
 
 | 대상 | 시나리오 |
 |------|---------|
-| submit() | 정상 흐름 — ingest 호출 후 Task+Outbox 생성 및 저장, 진행 중인 작업 존재 시 ConflictError 발생, ConflictError 시 ingest 미호출, 트랜잭션 매니저 execute 호출 확인 |
+| submit() | 정상 흐름 — ingest 호출 후 `create_if_not_active`로 원자적 Task 생성 + Outbox 저장, **활성 작업 존재 시 `create_if_not_active`가 ConflictError 발생**, ConflictError 시 outbox 저장 미호출, 트랜잭션 매니저 execute 호출 확인 |
 
 ### test_read_services.py — 6개
 
@@ -172,14 +173,14 @@ Outbox 메시지 발행과 좀비 복구 흐름을 검증한다.
 
 | 대상 | 시나리오 |
 |------|---------|
-| JsonFileLoader | 정상 JSON 배열 파싱, 빈 배열 반환, 존재하지 않는 파일 시 DataNotFoundError, 깨진 JSON 시 InvalidFormatError, JSON이 배열이 아닌 dict인 경우 InvalidFormatError |
+| JsonFileLoader | 정상 JSON 배열 파싱 (ijson 스트리밍), 빈 배열 반환, 존재하지 않는 파일 시 DataNotFoundError, 깨진 JSON 시 InvalidFormatError, JSON이 배열이 아닌 dict인 경우 빈 결과 반환 (ijson 스트리밍 특성) |
 | CsvFileLoader | 정상 CSV 파싱 (DictReader로 문자열 반환), 헤더만 있는 CSV → 빈 리스트, 존재하지 않는 파일 시 DataNotFoundError |
 | FileLoaderProvider | 등록된 FileType으로 올바른 로더 반환, 미등록 타입 시 InvalidFormatError, 파일 확장자에서 로더 자동 감지 (.json→JsonFileLoader, .csv→CsvFileLoader), 지원하지 않는 확장자(.xml) 시 InvalidFormatError |
 
 ### 실행
 
 ```bash
-pytest tests/application/ -v    # 104개, ~0.09초
+pytest tests/application/ -v    # 107개, ~0.08초
 ```
 
 ---
@@ -208,7 +209,7 @@ QueryBuilder가 MySQL 방언으로 올바른 SQL을 생성하는지 검증한다
 
 | 대상 | 시나리오 |
 |------|---------|
-| DataSearchQueryBuilder | task_id 필터, recorded_at 날짜 범위, temperature 온도 범위, headlights_on 불린 필터, weather/time_of_day/road_surface 조건 시 ODD_TAGS JOIN, object_class/obj_count/confidence 조건 시 LABELS 서브쿼리 IN절, LIMIT offset/count 페이지네이션, COUNT 쿼리에서 LIMIT 제거, 조건 없을 때 기본 조회 |
+| DataSearchQueryBuilder | task_id 필터, recorded_at 날짜 범위, temperature 온도 범위, headlights_on 불린 필터, weather/time_of_day/road_surface 조건 시 ODD_TAGS JOIN, object_class/obj_count/confidence 조건 시 EXISTS 서브쿼리, LIMIT offset/count 페이지네이션, COUNT 쿼리에서 LIMIT 제거, 조건 없을 때 기본 조회 |
 | RejectionQueryBuilder | task_id/stage/reason/source_id/field 각각 단독 필터, 5개 조건 복합 필터, LIMIT 페이지네이션, COUNT 쿼리 |
 
 ### test_mappers.py — 9개
@@ -256,9 +257,9 @@ pytest tests/adapter/ -v    # 56개, ~7초 (컨테이너 기동 포함)
 │              Testcontainers                   │
 │                                              │
 │  MySQL 8.0     MongoDB 7.0     Redis 7.0     │
-│  (selections,  (raw_data,      (캐시)        │
+│  (selections,  (raw_data,      (Celery       │
 │   odd_tags,    analyze_tasks,                │
-│   labels,      outbox)                       │
+│   labels,      outbox)         브로커)        │
 │   rejections)                                │
 └──────────────────────────────────────────────┘
 
@@ -293,7 +294,7 @@ def _clean_mongo(mongo_db):
 
 **TESTCONTAINERS_RYUK_DISABLED=true** 환경변수를 설정하여 Ryuk이 컨테이너를 조기 정리하는 문제를 방지한다.
 
-### test_e2e.py — 25개
+### test_e2e.py — 21개
 
 실제 인프라에서 전체 파이프라인 흐름이 올바르게 동작하는지 검증한다.
 
@@ -306,7 +307,6 @@ def _clean_mongo(mongo_db):
 | **TestApiEndpoints** (7개) | 존재하지 않는 task_id → 400 (DATA_NOT_FOUND), 파이프라인 실행 전 빈 rejections/data 조회, 유효하지 않은 enum 값 → 400, 페이지네이션 동작 (page=1, size=5 → page=2), ProblemDetail(RFC 7807) 형식 검증 (title, status, detail, code), 복수 조건 검색 (weather+time_of_day 동시 필터) |
 | **TestOutboxZombieRecovery** (2개) | dispatch 실패로 PROCESSING에 남은 좀비 메시지를 recover_zombies()로 PENDING 복구 + retry_count 증가 확인, 재시도 횟수가 max_retries(3)를 초과한 좀비는 FAILED로 최종 처리 |
 | **TestCursorPagination** (2개) | offset 기반 첫 페이지 조회 후 마지막 video_id로 cursor 페이징 → next_after 반환 + 결과 video_id가 모두 커서보다 큼, page와 after를 동시에 전달하면 400 에러 + 에러 메시지에 "page"와 "after" 포함 |
-| **TestRedisCacheOperations** (4개) | 캐시 저장 후 동일 키로 조회 시 같은 값 반환, invalidate_all 호출 후 모든 키 None 반환, 존재하지 않는 키 조회 시 None, 파이프라인 완료 후 기존 캐시가 무효화되는지 실제 Redis에서 확인 |
 | **TestMongoTransactionRollback** (2개) | 트랜잭션 안에서 Outbox 메시지 저장 후 예외 발생 시 데이터 롤백 확인 (실제 Repository + get_current_session 사용), 트랜잭션 정상 완료 시 데이터 커밋 확인 |
 
 ### 실행
@@ -344,9 +344,9 @@ TESTCONTAINERS_RYUK_DISABLED=true pytest tests/ -v
 ### 레이어별
 
 ```bash
-pytest tests/domain/ -v                # Domain 88개
-pytest tests/application/ -v           # Application 104개
+pytest tests/domain/ -v                # Domain 95개
+pytest tests/application/ -v           # Application 107개
 pytest tests/adapter/ -v               # Adapter 56개 (MySQL 컨테이너)
 TESTCONTAINERS_RYUK_DISABLED=true \
-  pytest tests/integration/ -v         # E2E 31개 (MySQL+MongoDB+Redis 컨테이너)
+  pytest tests/integration/ -v         # E2E 21개 (MySQL+MongoDB+Redis 컨테이너)
 ```
