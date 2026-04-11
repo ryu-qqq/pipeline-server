@@ -507,3 +507,108 @@ class TestCursorPagination:
         response_text = str(body)
         assert "page" in response_text.lower()
         assert "after" in response_text.lower()
+
+
+# === 시나리오 8: Redis 캐시 동작 검증 ===
+
+
+class TestRedisCacheOperations:
+    """Redis 캐시 저장/조회/무효화 동작을 검증한다"""
+
+    def test_캐시_저장_후_조회(self, cache_repo):
+        """캐시에 저장한 값을 동일 키로 조회하면 같은 값이 반환된다"""
+        cache_repo.set("test-key", {"result": [1, 2, 3]})
+
+        found = cache_repo.get("test-key")
+
+        assert found is not None
+        assert found == {"result": [1, 2, 3]}
+
+    def test_캐시_invalidate_all_후_조회_None(self, cache_repo):
+        """invalidate_all 호출 후 모든 캐시가 무효화된다"""
+        cache_repo.set("key-a", {"data": "a"})
+        cache_repo.set("key-b", {"data": "b"})
+
+        cache_repo.invalidate_all()
+
+        assert cache_repo.get("key-a") is None
+        assert cache_repo.get("key-b") is None
+
+    def test_캐시_미존재_키_조회_None(self, cache_repo):
+        """존재하지 않는 키를 조회하면 None을 반환한다"""
+        assert cache_repo.get("non-existent") is None
+
+    def test_파이프라인_완료후_캐시_무효화_확인(
+        self, client, pipeline_service, db_session, cache_repo
+    ):
+        """파이프라인 실행 완료 시 invalidate_all이 호출되어 기존 캐시가 사라진다"""
+        cache_repo.set("before-pipeline", {"old": True})
+        assert cache_repo.get("before-pipeline") is not None
+
+        # 파이프라인 실행
+        response = client.post("/analyze")
+        assert response.status_code == 202
+        task_id = response.json()["data"]["task_id"]
+
+        pipeline_service.execute(task_id)
+        db_session.commit()
+
+        # 파이프라인 완료 후 캐시가 무효화되었는지 확인
+        assert cache_repo.get("before-pipeline") is None
+
+
+# === 시나리오 9: MongoDB 트랜잭션 롤백 검증 ===
+
+
+class TestMongoTransactionRollback:
+    """MongoDB 트랜잭션의 커밋/롤백 동작을 실제 Repository로 검증한다
+
+    Repository는 내부적으로 get_current_session()을 호출하여
+    트랜잭션 세션을 MongoDB 연산에 전달한다.
+    세션 없이 직접 insert_one()을 호출하면 트랜잭션 밖에서 실행되므로,
+    반드시 Repository를 통해 검증해야 한다.
+    """
+
+    def test_트랜잭션_내_예외시_MongoDB_롤백(self, mongo_client, mongo_db):
+        """트랜잭션 안에서 예외 발생 시 저장된 Outbox 메시지가 롤백된다"""
+        from datetime import datetime
+
+        from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository
+        from app.adapter.outbound.mongodb.transaction import MongoTransactionManager
+        from app.domain.models import OutboxMessage
+
+        tx = MongoTransactionManager(mongo_client)
+        repo = MongoOutboxRepository(mongo_db)
+
+        msg = OutboxMessage.create_analyze_event("rollback-test-msg", "rollback-test-task")
+
+        try:
+            def _failing_op():
+                repo.save(msg)
+                raise RuntimeError("의도적 실패")
+
+            tx.execute(_failing_op)
+        except RuntimeError:
+            pass
+
+        # 롤백 확인: Outbox에 메시지가 없어야 한다 (_id = message_id)
+        assert mongo_db.outbox.find_one({"_id": "rollback-test-msg"}) is None
+
+    def test_트랜잭션_정상_완료시_MongoDB_커밋(self, mongo_client, mongo_db):
+        """트랜잭션이 정상 완료되면 저장된 Outbox 메시지가 커밋된다"""
+        from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository
+        from app.adapter.outbound.mongodb.transaction import MongoTransactionManager
+        from app.domain.models import OutboxMessage
+
+        tx = MongoTransactionManager(mongo_client)
+        repo = MongoOutboxRepository(mongo_db)
+
+        msg = OutboxMessage.create_analyze_event("commit-test-msg", "commit-test-task")
+
+        def _success_op():
+            repo.save(msg)
+
+        tx.execute(_success_op)
+
+        # 커밋 확인: Outbox에 메시지가 있어야 한다 (_id = message_id)
+        assert mongo_db.outbox.find_one({"_id": "commit-test-msg"}) is not None

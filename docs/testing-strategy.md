@@ -15,13 +15,13 @@
 
 | 레이어 | 테스트 수 | 비율 | 실행 시간 | DB |
 |--------|:--------:|:----:|:---------:|-----|
-| Domain | 88 | 34% | 0.02s | 없음 |
-| Application | 92 | 35% | 0.08s | Mock |
-| Adapter | 56 | 21% | ~7s | MySQL Testcontainer |
-| Integration (E2E) | 25 | 10% | ~12m | MySQL + MongoDB + Redis Testcontainer |
-| **합계** | **261** | 100% | | |
+| Domain | 88 | 32% | 0.02s | 없음 |
+| Application | 104 | 38% | 0.09s | Mock |
+| Adapter | 56 | 20% | ~7s | MySQL Testcontainer |
+| Integration (E2E) | 31 | 11% | ~13m | MySQL + MongoDB + Redis Testcontainer |
+| **합계** | **279** | 100% | | |
 
-단위 테스트(Domain + Application)만 실행하면 **0.1초**, Adapter 포함 시 **7초**, E2E 포함 시 **~13분**.
+단위 테스트(Domain + Application)만 실행하면 **0.1초**, Adapter 포함 시 **7초**, E2E 포함 시 **~14분**.
 
 ---
 
@@ -166,10 +166,20 @@ Outbox 메시지 발행과 좀비 복구 흐름을 검증한다.
 | DataReadService | 검색 조건 전달 시 Repository에 위임 확인, 빈 결과 반환 |
 | RejectionReadService | 검색 조건 전달 시 Repository에 위임 확인, 빈 결과 반환 |
 
+### test_file_loaders.py — 12개
+
+파일 로더의 JSON/CSV 파싱과 엣지 케이스를 검증한다.
+
+| 대상 | 시나리오 |
+|------|---------|
+| JsonFileLoader | 정상 JSON 배열 파싱, 빈 배열 반환, 존재하지 않는 파일 시 DataNotFoundError, 깨진 JSON 시 InvalidFormatError, JSON이 배열이 아닌 dict인 경우 InvalidFormatError |
+| CsvFileLoader | 정상 CSV 파싱 (DictReader로 문자열 반환), 헤더만 있는 CSV → 빈 리스트, 존재하지 않는 파일 시 DataNotFoundError |
+| FileLoaderProvider | 등록된 FileType으로 올바른 로더 반환, 미등록 타입 시 InvalidFormatError, 파일 확장자에서 로더 자동 감지 (.json→JsonFileLoader, .csv→CsvFileLoader), 지원하지 않는 확장자(.xml) 시 InvalidFormatError |
+
 ### 실행
 
 ```bash
-pytest tests/application/ -v    # 92개, ~0.08초
+pytest tests/application/ -v    # 104개, ~0.09초
 ```
 
 ---
@@ -296,52 +306,19 @@ def _clean_mongo(mongo_db):
 | **TestApiEndpoints** (7개) | 존재하지 않는 task_id → 400 (DATA_NOT_FOUND), 파이프라인 실행 전 빈 rejections/data 조회, 유효하지 않은 enum 값 → 400, 페이지네이션 동작 (page=1, size=5 → page=2), ProblemDetail(RFC 7807) 형식 검증 (title, status, detail, code), 복수 조건 검색 (weather+time_of_day 동시 필터) |
 | **TestOutboxZombieRecovery** (2개) | dispatch 실패로 PROCESSING에 남은 좀비 메시지를 recover_zombies()로 PENDING 복구 + retry_count 증가 확인, 재시도 횟수가 max_retries(3)를 초과한 좀비는 FAILED로 최종 처리 |
 | **TestCursorPagination** (2개) | offset 기반 첫 페이지 조회 후 마지막 video_id로 cursor 페이징 → next_after 반환 + 결과 video_id가 모두 커서보다 큼, page와 after를 동시에 전달하면 400 에러 + 에러 메시지에 "page"와 "after" 포함 |
+| **TestRedisCacheOperations** (4개) | 캐시 저장 후 동일 키로 조회 시 같은 값 반환, invalidate_all 호출 후 모든 키 None 반환, 존재하지 않는 키 조회 시 None, 파이프라인 완료 후 기존 캐시가 무효화되는지 실제 Redis에서 확인 |
+| **TestMongoTransactionRollback** (2개) | 트랜잭션 안에서 Outbox 메시지 저장 후 예외 발생 시 데이터 롤백 확인 (실제 Repository + get_current_session 사용), 트랜잭션 정상 완료 시 데이터 커밋 확인 |
 
 ### 실행
 
 ```bash
 # Docker 실행 필수
-TESTCONTAINERS_RYUK_DISABLED=true pytest tests/integration/ -v    # 25개, ~12분
+TESTCONTAINERS_RYUK_DISABLED=true pytest tests/integration/ -v    # 31개, ~13분
 ```
 
 ---
 
-## 6. 커버리지 분석
-
-### 커버되는 것
-
-| 영역 | 검증 방법 |
-|------|----------|
-| VO 불변식 (범위, 형식, 경계값) | Domain 단위 테스트 |
-| 상태 전이 (AnalyzeTask, OutboxMessage) | Domain 단위 + E2E |
-| Refiner 정제 로직 (V1/V2, enum, 다중 에러) | Application 단위 테스트 |
-| PhaseRunner 청크 처리, INSERT IGNORE 중복 | Application 단위 + E2E |
-| PipelineService resume (3분기 전수) | Application 단위 테스트 |
-| fully_linked / partial 통계 계산 | Application 단위 테스트 |
-| Outbox relay + 좀비 복구 | Application 단위 + E2E |
-| Mapper 왕복 정확성 | Adapter 단위 테스트 |
-| QueryBuilder 동적 쿼리 (MySQL 방언) | Adapter SQL 컴파일 테스트 |
-| Repository CRUD + INSERT IGNORE | Adapter MySQL Testcontainer |
-| REST API 응답 + 에러 핸들링 | Adapter TestClient + E2E |
-| offset/cursor 페이지네이션 분기 | Adapter + E2E |
-| 파이프라인 전체 흐름 (접수→정제→조회) | E2E 통합 테스트 |
-| 중복 요청 409 + 재요청 허용 | E2E 통합 테스트 |
-| task_id별 데이터 격리 | E2E 통합 테스트 |
-
-### 커버되지 않는 것
-
-| 영역 | 사유 |
-|------|------|
-| Celery 비동기 실행 | E2E에서 동기 호출로 대체. 실제 Celery worker 테스트는 staging 환경 필요 |
-| Redis 캐시 TTL/무효화 | E2E에서 invalidate_all()만 호출. TTL 만료 동작은 미검증 |
-| MongoDB 트랜잭션 롤백 | @transactional 데코레이터 동작은 E2E에서 간접 검증. 부분 실패 롤백은 미검증 |
-| 동시성/Race condition | 단일 스레드 테스트. 동시 POST /analyze 충돌은 미검증 |
-| 대용량 성능 | 수천 건 시드 데이터로 기능 검증만. 수십만 건 성능은 미검증 |
-| 파일 형식 다양성 | data/ 디렉토리의 고정 시드만 사용. 엣지 케이스 CSV/JSON은 미검증 |
-
----
-
-## 7. 테스트 실행 방법
+## 6. 테스트 실행 방법
 
 ### 단위 테스트만 (가장 빠름)
 
@@ -360,7 +337,7 @@ pytest tests/ --ignore=tests/integration -v
 ### 전체 (Docker 필요)
 
 ```bash
-# 모든 테스트 (13분)
+# 모든 테스트 (14분)
 TESTCONTAINERS_RYUK_DISABLED=true pytest tests/ -v
 ```
 
@@ -368,8 +345,8 @@ TESTCONTAINERS_RYUK_DISABLED=true pytest tests/ -v
 
 ```bash
 pytest tests/domain/ -v                # Domain 88개
-pytest tests/application/ -v           # Application 92개
+pytest tests/application/ -v           # Application 104개
 pytest tests/adapter/ -v               # Adapter 56개 (MySQL 컨테이너)
 TESTCONTAINERS_RYUK_DISABLED=true \
-  pytest tests/integration/ -v         # E2E 25개 (MySQL+MongoDB+Redis 컨테이너)
+  pytest tests/integration/ -v         # E2E 31개 (MySQL+MongoDB+Redis 컨테이너)
 ```

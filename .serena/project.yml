@@ -1,0 +1,87 @@
+name: "pipeline-server"
+
+# Python 프로젝트 — python language server 사용
+languages:
+- python
+
+language_backend: "LSP"
+
+encoding: "utf-8"
+
+line_ending: "lf"
+
+# 무시 경로 (색인 제외)
+ignore_patterns:
+- "*.pyc"
+- "__pycache__/"
+- "*.pyo"
+- ".git/"
+- ".idea/"
+- ".vscode/"
+- ".playwright-mcp/"
+- "venv/"
+- ".venv/"
+- "*.egg-info/"
+- "dist/"
+- "build/"
+- ".pytest_cache/"
+- ".ruff_cache/"
+- ".mypy_cache/"
+- "htmlcov/"
+- "node_modules/"
+- "data/"
+
+# 메모리 보호 — 컨벤션/아키텍처 결정은 AI가 수정 불가
+read_only_memory_patterns:
+- "conventions/.*"
+- "architecture/.*"
+
+# 심볼 정보 조회 예산 (초)
+symbol_info_budget: 20.0
+tool_timeout: 300
+
+# Python language server 설정
+ls_specific_settings:
+  python:
+    # python_path는 venv의 python을 사용
+    python_path: "venv/bin/python"
+
+show_logs: false
+
+excluded_tools: []
+included_optional_tools: []
+fixed_tools: []
+
+base_modes:
+default_modes:
+
+ignored_memory_patterns: []
+ignored_paths: []
+
+read_only: false
+ignore_all_files_in_gitignore: true
+
+# 프로젝트 활성화 시 항상 전달되는 초기 프롬프트
+initial_prompt: |
+  pipeline-server는 Python 3.12 + FastAPI 기반의 자율주행 데이터 정제 파이프라인 서버이다.
+
+  아키텍처: Hexagonal (Port & Adapter) + DDD + CQRS
+  - app/domain/: 도메인 모델, VO, Enum, 예외, Port(ABC) — 순수 Python, 외부 의존 없음
+  - app/application/: 서비스, Refiner, PhaseRunner — Port 의존만 허용
+  - app/adapter/inbound/rest/: FastAPI 라우터 (변환 + 위임만)
+  - app/adapter/inbound/worker/: Celery worker (비동기 파이프라인 실행)
+  - app/adapter/outbound/mysql/: SQLAlchemy Entity, Mapper, Repository, QueryBuilder
+  - app/adapter/outbound/mongodb/: PyMongo Document, Mapper, Repository, Transaction
+  - app/adapter/outbound/redis/: Redis Cache Repository
+
+  DB: MySQL 8.0 (정제 데이터) + MongoDB 7.0 (원본 + Task + Outbox) + Redis 7.0 (캐시)
+  비동기: Celery + Outbox 패턴 (MongoDB 트랜잭션으로 이벤트 발행 보장)
+  테스트: pytest, Testcontainers (MySQL + MongoDB + Redis), 279개 테스트
+
+  핵심 규칙:
+  - 도메인 모델은 frozen=True dataclass, 상태 전이는 새 인스턴스 반환
+  - Port(ABC)에 도메인 모델만 사용 (Entity, DTO, Session 금지)
+  - Application은 Port만 의존 (구체 구현체 import 금지)
+  - Adapter는 얇게 — 변환 + 위임만
+
+project_name: pipeline-server
