@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.git/
+.github/
+.claude/
+.venv/
+venv/
+tests/
+docs/
+notebooks/
+.gitignore
+.dockerignore
+README.md
+*.md
