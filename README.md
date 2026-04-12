@@ -46,14 +46,44 @@ curl -X POST http://localhost:8000/analyze
 # 2. 진행 상태 확인 (task_id는 1번 응답에서 획득)
 curl http://localhost:8000/analyze/{task_id}
 
-# 3. 학습 데이터 검색 (offset 페이징)
+# 3. 중복 분석 요청 → 409 반환 (진행 중인 작업이 있으면 거부)
+curl -X POST http://localhost:8000/analyze
+```
+
+```bash
+# 4. 학습 데이터 검색 — 날씨 조건
+curl "http://localhost:8000/data?weather=sunny&page=1&size=20"
+
+# 5. 학습 데이터 검색 — 객체 클래스 + 최소 개수
+curl "http://localhost:8000/data?object_class=car&min_obj_count=10&page=1&size=20"
+
+# 6. 학습 데이터 검색 — 복합 조건 (날씨 + 객체 + 도로 상태)
 curl "http://localhost:8000/data?weather=sunny&object_class=car&min_obj_count=10&page=1&size=20"
 
-# 3-1. 학습 데이터 검색 (cursor 페이징 — 대용량 뒤쪽 페이지 성능 최적화)
-curl "http://localhost:8000/data?weather=sunny&after=0&size=20"
+# 7. cursor 페이징 — 대용량 뒤쪽 페이지 성능 최적화
+curl "http://localhost:8000/data?after=0&size=20"
+```
 
-# 4. 거부 데이터 조회
-curl "http://localhost:8000/rejections?stage=selection&reason=invalid_format"
+```bash
+# 8. 거부 데이터 조회 — 전체
+curl "http://localhost:8000/rejections?page=1&size=20"
+
+# 9. 거부 데이터 조회 — 단계별 필터링
+curl "http://localhost:8000/rejections?stage=odd_tagging&page=1&size=20"
+
+# 10. 거부 데이터 조회 — 사유별 필터링
+curl "http://localhost:8000/rejections?stage=auto_labeling&reason=fractional_obj_count&page=1&size=20"
+```
+
+```bash
+# 에러 케이스 — 유효하지 않은 Enum 값 → 400
+curl "http://localhost:8000/data?weather=tornado"
+
+# 에러 케이스 — page와 after 동시 사용 → 400
+curl "http://localhost:8000/data?page=1&after=100&size=20"
+
+# 에러 케이스 — 존재하지 않는 task_id → 400
+curl http://localhost:8000/analyze/nonexistent-id
 ```
 
 ### 테스트
@@ -64,21 +94,20 @@ pip install -r requirements.txt
 ```
 
 ```bash
-# 전체 테스트 (Docker Desktop 실행 필요 — testcontainers가 컨테이너를 자동 관리)
-python -m pytest tests/ -v
-
-# 도메인 단위 테스트 (외부 의존 없음)
+# 도메인 단위 테스트 (외부 의존 없음, ~1초)
 python -m pytest tests/domain/ -v
 
-# Application 단위 테스트 (Mock Repository)
+# Application 단위 테스트 (Mock Repository, ~1초)
 python -m pytest tests/application/ -v
 
-# Adapter 단위 테스트 (SQLite in-memory + TestClient)
+# Adapter 단위 테스트 (SQLite in-memory + TestClient, ~7초)
 python -m pytest tests/adapter/ -v
 
-# 통합 E2E 테스트 (testcontainers — MySQL + MongoDB + Redis)
+# 통합 E2E 테스트 (testcontainers — MySQL + MongoDB + Redis, ~10분)
 python -m pytest tests/integration/ -v
 ```
+
+> **통합 테스트 소요시간 안내**: E2E 테스트(28건)는 testcontainers가 MySQL, MongoDB(Replica Set), Redis 컨테이너를 자동 생성한 뒤, 실제 51만건 데이터로 파이프라인 실행 · 검색 · 중복 방어 · 거부 분류 등 전체 시나리오를 검증합니다. 컨테이너 기동 + 전체 테스트 완료까지 약 **4~5분** 소요됩니다.
 
 ### 종료
 

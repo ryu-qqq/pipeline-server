@@ -372,7 +372,177 @@ def _create_mongo_indexes(mongo_db):
 # === 자동 정리 ===
 
 
+def _clean_all_data(db_engine, mongo_db, redis_client):
+    """MySQL + MongoDB + Redis 데이터를 모두 삭제한다."""
+    with db_engine.connect() as conn:
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+        for table in ("rejections", "labels", "odd_tags", "selections"):
+            conn.execute(text(f"DELETE FROM {table}"))
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+        conn.commit()
+    for coll_name in ("raw_data", "analyze_tasks", "outbox"):
+        with contextlib.suppress(Exception):
+            mongo_db[coll_name].delete_many({})
+    with contextlib.suppress(Exception):
+        redis_client.flushdb()
+
+
 @pytest.fixture(autouse=True)
 def _auto_clean(_clean_mysql, _clean_mongo, _clean_redis):
     """모든 통합 테스트에서 자동으로 데이터 정리를 수행한다."""
     yield
+
+
+# === 클래스 스코프 fixture (읽기 전용 테스트 공유용) ===
+
+
+@pytest.fixture(scope="class")
+def class_db_session(_session_factory):
+    """클래스 스코프 MySQL 세션"""
+    session = _session_factory()
+    yield session
+    session.rollback()
+    session.close()
+
+
+@pytest.fixture(scope="class")
+def class_client(class_db_session, mongo_db, redis_client, mongo_client):
+    """클래스 스코프 FastAPI TestClient"""
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    from app.adapter.outbound.mongodb.repositories import (
+        MongoOutboxRepository,
+        MongoRawDataRepository,
+        MongoTaskRepository,
+    )
+    from app.adapter.outbound.mongodb.transaction import MongoTransactionManager
+    from app.adapter.outbound.mysql.repositories import (
+        SqlDataSearchRepository,
+        SqlLabelRepository,
+        SqlOddTagRepository,
+        SqlRejectionRepository,
+        SqlSelectionRepository,
+    )
+    from app.application.file_loaders import CsvFileLoader, FileLoaderProvider, JsonFileLoader
+    from app.domain.enums import FileType
+    from app.main import app
+    from app.rest_dependencies import (
+        get_db,
+        get_db_session,
+        get_label_repo,
+        get_loader_provider,
+        get_odd_tag_repo,
+        get_outbox_repo,
+        get_raw_data_repo,
+        get_rejection_repo,
+        get_search_repo,
+        get_selection_repo,
+        get_task_repo,
+        get_tx_manager,
+    )
+
+    def _db_session():
+        yield class_db_session
+
+    app.dependency_overrides[get_db_session] = _db_session
+    app.dependency_overrides[get_db] = lambda: mongo_db
+    app.dependency_overrides[get_selection_repo] = lambda: SqlSelectionRepository(class_db_session)
+    app.dependency_overrides[get_odd_tag_repo] = lambda: SqlOddTagRepository(class_db_session)
+    app.dependency_overrides[get_label_repo] = lambda: SqlLabelRepository(class_db_session)
+    app.dependency_overrides[get_rejection_repo] = lambda: SqlRejectionRepository(class_db_session)
+    app.dependency_overrides[get_search_repo] = lambda: SqlDataSearchRepository(class_db_session)
+    app.dependency_overrides[get_raw_data_repo] = lambda: MongoRawDataRepository(mongo_db)
+    app.dependency_overrides[get_task_repo] = lambda: MongoTaskRepository(mongo_db)
+    app.dependency_overrides[get_outbox_repo] = lambda: MongoOutboxRepository(mongo_db)
+    app.dependency_overrides[get_tx_manager] = lambda: MongoTransactionManager(mongo_client)
+
+    def _loader_provider():
+        provider = FileLoaderProvider()
+        provider.register(FileType.JSON, JsonFileLoader())
+        provider.register(FileType.CSV, CsvFileLoader())
+        return provider
+
+    app.dependency_overrides[get_loader_provider] = _loader_provider
+
+    with (
+        patch("app.adapter.outbound.mysql.database.create_tables"),
+        patch("app.adapter.outbound.mongodb.client.ensure_indexes"),
+        TestClient(app) as tc,
+    ):
+        yield tc
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="class")
+def class_pipeline_service(class_db_session, mongo_db):
+    """클래스 스코프 PipelineService"""
+    from app.adapter.outbound.mongodb.repositories import (
+        MongoRawDataRepository,
+        MongoTaskRepository,
+    )
+    from app.adapter.outbound.mysql.repositories import (
+        SqlLabelRepository,
+        SqlOddTagRepository,
+        SqlRejectionRepository,
+        SqlSelectionRepository,
+    )
+    from app.application.phase_runners import (
+        LabelPhaseRunner,
+        OddTagPhaseRunner,
+        PhaseRunnerProvider,
+        SelectionPhaseRunner,
+    )
+    from app.application.pipeline_service import PipelineService
+    from app.domain.enums import Stage
+
+    task_repo = MongoTaskRepository(mongo_db)
+    raw_repo = MongoRawDataRepository(mongo_db)
+    rej_repo = SqlRejectionRepository(class_db_session)
+    sel_repo = SqlSelectionRepository(class_db_session)
+    odd_repo = SqlOddTagRepository(class_db_session)
+    lbl_repo = SqlLabelRepository(class_db_session)
+
+    provider = PhaseRunnerProvider()
+    provider.register(
+        Stage.SELECTION,
+        SelectionPhaseRunner(
+            raw_data_repo=raw_repo, task_repo=task_repo,
+            rejection_repo=rej_repo, selection_repo=sel_repo,
+        ),
+    )
+    provider.register(
+        Stage.ODD_TAGGING,
+        OddTagPhaseRunner(
+            raw_data_repo=raw_repo, task_repo=task_repo,
+            rejection_repo=rej_repo, odd_tag_repo=odd_repo,
+        ),
+    )
+    provider.register(
+        Stage.AUTO_LABELING,
+        LabelPhaseRunner(
+            raw_data_repo=raw_repo, task_repo=task_repo,
+            rejection_repo=rej_repo, label_repo=lbl_repo,
+        ),
+    )
+
+    return PipelineService(
+        task_repo=task_repo,
+        selection_repo=sel_repo,
+        odd_tag_repo=odd_repo,
+        label_repo=lbl_repo,
+        phase_runner_provider=provider,
+    )
+
+
+@pytest.fixture(scope="class")
+def shared_task_id(class_client, class_pipeline_service, class_db_session, db_engine, mongo_db, redis_client):
+    """파이프라인 1회 실행 후 task_id를 공유한다. 클래스 종료 시 정리."""
+    response = class_client.post("/analyze")
+    task_id = response.json()["data"]["task_id"]
+    class_pipeline_service.execute(task_id)
+    class_db_session.commit()
+    yield task_id
+    _clean_all_data(db_engine, mongo_db, redis_client)

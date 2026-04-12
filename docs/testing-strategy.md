@@ -3,11 +3,11 @@
 ## 1. 테스트 피라미드 개요
 
 ```
-         ╱  E2E (21)  ╲          ← Testcontainers (MySQL + MongoDB + Redis)
+         ╱  E2E (28)  ╲          ← Testcontainers (MySQL + MongoDB + Redis)
         ╱───────────────╲         ~12분, Docker 필요
        ╱  Adapter (56)   ╲       ← MySQL Testcontainer + TestClient Mock
       ╱───────────────────╲       ~7초
-     ╱  Application (107)  ╲     ← MagicMock(spec=ABC)
+     ╱  Application (110)  ╲     ← MagicMock(spec=ABC)
     ╱───────────────────────╲     ~0.08초
    ╱     Domain (95)         ╲   ← 순수 Python, 외부 의존 없음
   ╱───────────────────────────╲   ~0.03초
@@ -16,10 +16,10 @@
 | 레이어 | 테스트 수 | 비율 | 실행 시간 | DB |
 |--------|:--------:|:----:|:---------:|-----|
 | Domain | 95 | 34% | 0.03s | 없음 |
-| Application | 107 | 38% | 0.08s | Mock |
+| Application | 110 | 38% | 0.09s | Mock |
 | Adapter | 56 | 20% | ~7s | MySQL Testcontainer |
-| Integration (E2E) | 21 | 8% | ~13m | MySQL + MongoDB + Redis Testcontainer |
-| **합계** | **279** | 100% | | |
+| Integration (E2E) | 28 | 10% | ~13m | MySQL + MongoDB + Redis Testcontainer |
+| **합계** | **289** | 100% | | |
 
 단위 테스트(Domain + Application)만 실행하면 **0.1초**, Adapter 포함 시 **7초**, E2E 포함 시 **~14분**.
 
@@ -129,14 +129,14 @@ ODD 태깅 원본 데이터를 도메인 모델로 정제하는 로직을 검증
 | 필드 누락 | object_class 누락, avg_confidence 누락, 잘못된 object_class enum 값 |
 | 다중 에러 | obj_count + object_class + confidence 동시 에러, video_id와 obj_count 동시 에러, 빈 dict `{}` 시 4건 이상 |
 
-### test_outbox_relay_service.py — 9개
+### test_outbox_relay_service.py — 12개
 
-Outbox 메시지 발행과 좀비 복구 흐름을 검증한다.
+Outbox 메시지 발행과 좀비 복구 흐름을 검증한다. 낙관적 잠금(save_if_status)으로 relay()와 recover_zombies() 동시 실행 시 race condition을 방지한다.
 
 | 대상 | 시나리오 |
 |------|---------|
-| relay() | 정상 흐름 — PENDING 조회→PROCESSING 전환→dispatch→PUBLISHED (순서 검증), 여러 건 처리, PENDING 없으면 0 반환, 발행 실패 시 PROCESSING 상태 유지, 부분 실패 시 성공 건수만 반환 |
-| recover_zombies() | 재시도 가능하면 PENDING으로 복구, 재시도 횟수 초과 시 FAILED, 좀비 없으면 0 반환, 여러 좀비 개별 처리 |
+| relay() | 정상 흐름 — PENDING 조회→PROCESSING 전환→dispatch→PUBLISHED (순서 검증), 여러 건 처리, PENDING 없으면 0 반환, 발행 실패 시 PROCESSING 상태 유지, 부분 실패 시 성공 건수만 반환, **낙관적 잠금 실패 시(이미 다른 프로세스가 상태 변경) published 미증가** |
+| recover_zombies() | 재시도 가능하면 PENDING으로 복구, 재시도 횟수 초과 시 FAILED, 좀비 없으면 0 반환, 여러 좀비 개별 처리, **낙관적 잠금 실패 시 recovered 미증가**, **한 건 save 실패해도 나머지 좀비 계속 처리** |
 
 ### test_pipeline_service.py — 6개
 
@@ -306,6 +306,7 @@ def _clean_mongo(mongo_db):
 | **TestTaskDataIsolation** (1개) | 두 번의 독립적인 분석 실행 후 각 task_id별 데이터가 격리되는지 확인 (교차 조회 없음) |
 | **TestApiEndpoints** (7개) | 존재하지 않는 task_id → 400 (DATA_NOT_FOUND), 파이프라인 실행 전 빈 rejections/data 조회, 유효하지 않은 enum 값 → 400, 페이지네이션 동작 (page=1, size=5 → page=2), ProblemDetail(RFC 7807) 형식 검증 (title, status, detail, code), 복수 조건 검색 (weather+time_of_day 동시 필터) |
 | **TestOutboxZombieRecovery** (2개) | dispatch 실패로 PROCESSING에 남은 좀비 메시지를 recover_zombies()로 PENDING 복구 + retry_count 증가 확인, 재시도 횟수가 max_retries(3)를 초과한 좀비는 FAILED로 최종 처리 |
+| **TestOutboxOptimisticLock** (1개) | relay()로 PUBLISHED 전환 완료된 메시지에 recover_zombies()를 실행해도 상태가 덮어쓰이지 않는지 확인 (낙관적 잠금으로 race condition 방지) |
 | **TestCursorPagination** (2개) | offset 기반 첫 페이지 조회 후 마지막 video_id로 cursor 페이징 → next_after 반환 + 결과 video_id가 모두 커서보다 큼, page와 after를 동시에 전달하면 400 에러 + 에러 메시지에 "page"와 "after" 포함 |
 | **TestMongoTransactionRollback** (2개) | 트랜잭션 안에서 Outbox 메시지 저장 후 예외 발생 시 데이터 롤백 확인 (실제 Repository + get_current_session 사용), 트랜잭션 정상 완료 시 데이터 커밋 확인 |
 
@@ -313,7 +314,7 @@ def _clean_mongo(mongo_db):
 
 ```bash
 # Docker 실행 필수
-TESTCONTAINERS_RYUK_DISABLED=true pytest tests/integration/ -v    # 31개, ~13분
+TESTCONTAINERS_RYUK_DISABLED=true pytest tests/integration/ -v    # 28개, ~13분
 ```
 
 ---
@@ -348,5 +349,5 @@ pytest tests/domain/ -v                # Domain 95개
 pytest tests/application/ -v           # Application 107개
 pytest tests/adapter/ -v               # Adapter 56개 (MySQL 컨테이너)
 TESTCONTAINERS_RYUK_DISABLED=true \
-  pytest tests/integration/ -v         # E2E 21개 (MySQL+MongoDB+Redis 컨테이너)
+  pytest tests/integration/ -v         # E2E 28개 (MySQL+MongoDB+Redis 컨테이너)
 ```

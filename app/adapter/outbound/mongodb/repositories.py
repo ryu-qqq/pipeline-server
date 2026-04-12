@@ -6,7 +6,7 @@ from pymongo.database import Database
 from app.adapter.outbound.mongodb.documents import AnalyzeTaskDocument, OutboxDocument, RawDataDocument
 from app.adapter.outbound.mongodb.mappers import OutboxDocumentMapper, TaskDocumentMapper
 from app.adapter.outbound.mongodb.transaction import get_current_session
-from app.domain.enums import TaskStatus
+from app.domain.enums import OutboxStatus, TaskStatus
 from app.domain.exceptions import ConflictError
 from app.domain.models import AnalyzeTask, OutboxCriteria, OutboxMessage
 from app.domain.ports import OutboxRepository, RawDataRepository, TaskRepository
@@ -89,13 +89,13 @@ class MongoTaskRepository(TaskRepository):
     def create_if_not_active(self, task: AnalyzeTask) -> None:
         """활성 작업이 없을 때만 생성한다.
 
-        findOneAndUpdate로 PENDING/PROCESSING 문서를 원자적으로 확인하고,
+        PENDING/PROCESSING 상태 문서가 있는지 읽기로 확인하고,
         존재하면 ConflictError를 던진다.
         """
         session = get_current_session()
-        existing = self._collection.find_one_and_update(
+        existing = self._collection.find_one(
             {"status": {"$in": [TaskStatus.PENDING.value, TaskStatus.PROCESSING.value]}},
-            {"$set": {"_conflict_check": True}},
+            projection={"_id": 1},
             session=session,
         )
         if existing is not None:
@@ -117,6 +117,16 @@ class MongoOutboxRepository(OutboxRepository):
             upsert=True,
             session=get_current_session(),
         )
+
+    def save_if_status(self, message: OutboxMessage, expected_status: OutboxStatus) -> bool:
+        """현재 상태가 expected_status일 때만 저장한다 (낙관적 잠금)."""
+        document = OutboxDocumentMapper.to_document(message)
+        result = self._collection.replace_one(
+            {"_id": message.message_id, "status": expected_status.value},
+            document.to_dict(),
+            session=get_current_session(),
+        )
+        return result.modified_count > 0
 
     def find_by(self, criteria: OutboxCriteria) -> list[OutboxMessage]:
         query: dict = {"status": criteria.status.value}

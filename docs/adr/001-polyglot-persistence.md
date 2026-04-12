@@ -22,14 +22,7 @@
 | 트랜잭션 간단 | 작업 상태가 빈번히 갱신되는데 행 락 경합 발생 가능 |
 | | Outbox 폴링 시 SELECT FOR UPDATE가 정제 쿼리와 경합 |
 
-### 대안 B: PostgreSQL + JSONB
-
-| 장점 | 단점 |
-|------|------|
-| JSONB로 원본 저장 + 정규화 검색 모두 가능 | 과제에서 별도 설치 필요 (MySQL이 더 보편적) |
-| 단일 DB로 운영 가능 | Outbox 폴링이 메인 DB에 부하를 줌 |
-
-### 대안 C: MongoDB + MySQL (채택)
+### 대안 B: MongoDB + MySQL (채택)
 
 | 장점 | 단점 |
 |------|------|
@@ -40,7 +33,7 @@
 
 ## 결정
 
-**대안 C (MongoDB + MySQL + Redis)** 채택.
+**대안 B (MongoDB + MySQL + Redis)** 채택.
 
 - **MongoDB**: 원본 보관(스키마리스), 작업 상태(빈번한 갱신), Outbox(트랜잭션)
 - **MySQL**: 정제 데이터 저장 + 복합 조건 검색(JOIN, 커버링 인덱스)

@@ -4,15 +4,17 @@ testcontainers: MySQL 8.0 + MongoDB 7.0 (replica set) + Redis 7.0
 Celery Worker 대신 PipelineService.execute()를 동기 호출한다.
 """
 
+import pytest
 
-# === 시나리오 1: 전체 파이프라인 흐름 (Happy Path) ===
+
+# === 시나리오 1: 파이프라인 접수 + Outbox 흐름 ===
 
 
-class TestFullPipelineFlow:
-    """POST /analyze 접수 → Outbox 확인 → 파이프라인 실행 → 결과 조회"""
+class TestPipelineSubmitFlow:
+    """POST /analyze 접수 → Outbox 확인 → 파이프라인 완료"""
 
     def test_submit_returns_202_with_task_id(self, client):
-        """1단계: POST /analyze → 202 반환, task_id 획득"""
+        """POST /analyze → 202 반환, task_id 획득"""
         response = client.post("/analyze")
 
         assert response.status_code == 202
@@ -21,18 +23,17 @@ class TestFullPipelineFlow:
         assert data["status"] == "pending"
 
     def test_outbox_message_created_as_pending(self, client, mongo_db):
-        """2단계: POST /analyze 후 Outbox에 PENDING 메시지가 생성된다"""
+        """POST /analyze 후 Outbox에 PENDING 메시지가 생성된다"""
         response = client.post("/analyze")
         task_id = response.json()["data"]["task_id"]
 
-        # Outbox에서 해당 task_id의 메시지 확인
         outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
         assert outbox_msg is not None
         assert outbox_msg["status"] == "pending"
         assert outbox_msg["message_type"] == "ANALYZE"
 
     def test_outbox_relay_publishes_message(self, client, mongo_db, mongo_client):
-        """3단계: OutboxRelayService.relay() → Outbox PUBLISHED 확인"""
+        """OutboxRelayService.relay() → Outbox PUBLISHED 확인"""
         from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository
         from app.application.outbox_relay_service import OutboxRelayService
         from app.domain.ports import TaskDispatcher
@@ -40,7 +41,6 @@ class TestFullPipelineFlow:
         response = client.post("/analyze")
         task_id = response.json()["data"]["task_id"]
 
-        # TaskDispatcher를 No-op으로 대체 (실제 Celery 호출 방지)
         class NoOpDispatcher(TaskDispatcher):
             def __init__(self):
                 self.dispatched = []
@@ -59,21 +59,11 @@ class TestFullPipelineFlow:
         assert published == 1
         assert task_id in dispatcher.dispatched
 
-        # Outbox 상태가 PUBLISHED로 전환되었는지 확인
         outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
         assert outbox_msg["status"] == "published"
 
     def test_pipeline_execution_completes(self, client, pipeline_service, db_session):
-        """4단계: PipelineService.execute() → COMPLETED 확인"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
-
-        # 파이프라인 동기 실행
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-    def test_task_status_completed_after_pipeline(self, client, pipeline_service, db_session):
-        """5단계: GET /analyze/{task_id} → COMPLETED, progress 확인"""
+        """PipelineService.execute() → COMPLETED 확인"""
         response = client.post("/analyze")
         task_id = response.json()["data"]["task_id"]
 
@@ -81,6 +71,26 @@ class TestFullPipelineFlow:
         db_session.commit()
 
         response = client.get(f"/analyze/{task_id}")
+        assert response.json()["data"]["status"] == "completed"
+
+
+# === 시나리오 2: 읽기 전용 쿼리 (파이프라인 1회 공유) ===
+
+
+class TestReadOnlyQueries:
+    """파이프라인 1회 실행 후 검색 · 필터링 · 페이징을 검증한다.
+
+    10개 테스트가 동일한 파이프라인 결과를 공유하여 실행 시간을 단축한다.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _auto_clean(self):
+        """테스트 간 데이터 정리를 비활성화한다."""
+        yield
+
+    def test_task_status_completed(self, class_client, shared_task_id):
+        """GET /analyze/{task_id} → COMPLETED, progress 확인"""
+        response = class_client.get(f"/analyze/{shared_task_id}")
 
         assert response.status_code == 200
         data = response.json()["data"]
@@ -88,64 +98,122 @@ class TestFullPipelineFlow:
         assert data["result"] is not None
         assert data["result"]["fully_linked"] >= 0
 
-        # 각 단계의 progress가 존재하는지 확인
         progress = data["progress"]
         for stage in ("selection", "odd_tagging", "auto_labeling"):
             assert progress[stage]["total"] > 0
 
-    def test_search_data_after_pipeline(self, client, pipeline_service, db_session):
-        """6단계: GET /data?weather=sunny → 정제된 데이터 조회 확인"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
-
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        response = client.get("/data?weather=sunny")
+    def test_search_by_weather(self, class_client, shared_task_id):
+        """GET /data?weather=sunny → 정제된 데이터 조회"""
+        response = class_client.get("/data?weather=sunny")
 
         assert response.status_code == 200
         body = response.json()
         assert body["total_elements"] > 0
-        # weather=sunny 필터가 적용되었는지 확인
         for item in body["content"]:
             assert item["weather"] == "sunny"
 
-    def test_search_with_compound_conditions(self, client, pipeline_service, db_session):
-        """7단계: GET /data?weather=sunny&min_obj_count=10 → 복합 조건 검색"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
-
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        response = client.get("/data?weather=sunny&min_obj_count=10")
+    def test_search_with_compound_conditions(self, class_client, shared_task_id):
+        """GET /data?weather=sunny&min_obj_count=10 → 복합 조건 검색"""
+        response = class_client.get("/data?weather=sunny&min_obj_count=10")
 
         assert response.status_code == 200
         body = response.json()
-        # 복합 조건 결과는 단일 조건보다 같거나 적어야 한다
         assert isinstance(body["content"], list)
         for item in body["content"]:
             assert item["weather"] == "sunny"
-            # label 중 obj_count >= 10인 것이 존재해야 한다
             assert any(lb["obj_count"] >= 10 for lb in item["labels"])
 
-    def test_rejections_after_pipeline(self, client, pipeline_service, db_session):
-        """8단계: GET /rejections?task_id={task_id} → 거부 레코드 조회"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
+    def test_search_with_multiple_filters(self, class_client, shared_task_id):
+        """복수 조건 검색 (날씨 + 시간대)"""
+        response = class_client.get(
+            f"/data?task_id={shared_task_id}&weather=sunny&time_of_day=day&page=1&size=10"
+        )
+        assert response.status_code == 200
+        body = response.json()
+        for item in body["content"]:
+            assert item["weather"] == "sunny"
+            assert item["time_of_day"] == "day"
 
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        response = client.get(f"/rejections?task_id={task_id}")
+    def test_rejections_exist(self, class_client, shared_task_id):
+        """GET /rejections?task_id={task_id} → 거부 레코드 조회"""
+        response = class_client.get(f"/rejections?task_id={shared_task_id}")
 
         assert response.status_code == 200
         body = response.json()
-        # 실제 데이터에는 V1/V2 혼합 + 잘못된 데이터가 있으므로 거부 레코드가 존재
         assert body["total_elements"] >= 0
 
+    def test_rejections_categorized_by_reason(self, class_client, shared_task_id):
+        """거부 레코드가 유효한 사유별로 분류된다"""
+        response = class_client.get(f"/rejections?task_id={shared_task_id}&size=100")
+        assert response.status_code == 200
+        body = response.json()
 
-# === 시나리오 2: 중복 요청 방어 ===
+        valid_reasons = {
+            "duplicate_tagging", "duplicate_label",
+            "negative_obj_count", "fractional_obj_count",
+            "invalid_format", "unknown_schema",
+            "missing_required_field", "invalid_enum_value",
+            "unlinked_record",
+        }
+        for item in body["content"]:
+            assert item["reason"] in valid_reasons
+            assert item["stage"] in ("selection", "odd_tagging", "auto_labeling")
+
+    def test_filter_by_rejection_reason(self, class_client, shared_task_id):
+        """GET /rejections?reason=unlinked_record → 사유별 필터"""
+        response = class_client.get(
+            f"/rejections?task_id={shared_task_id}&reason=unlinked_record&size=100"
+        )
+        assert response.status_code == 200
+        body = response.json()
+
+        for item in body["content"]:
+            assert item["reason"] == "unlinked_record"
+
+    def test_filter_by_stage(self, class_client, shared_task_id):
+        """GET /rejections?stage=auto_labeling → 단계별 필터"""
+        response = class_client.get(
+            f"/rejections?task_id={shared_task_id}&stage=auto_labeling&size=100"
+        )
+        assert response.status_code == 200
+        body = response.json()
+
+        for item in body["content"]:
+            assert item["stage"] == "auto_labeling"
+
+    def test_rejections_pagination(self, class_client, shared_task_id):
+        """거부 레코드 페이지네이션"""
+        resp1 = class_client.get(f"/rejections?task_id={shared_task_id}&page=1&size=5")
+        assert resp1.status_code == 200
+        body1 = resp1.json()
+        assert len(body1["content"]) <= 5
+        assert body1["page"] == 1
+
+        if body1["total_elements"] > 5:
+            resp2 = class_client.get(f"/rejections?task_id={shared_task_id}&page=2&size=5")
+            assert resp2.status_code == 200
+            assert resp2.json()["page"] == 2
+
+    def test_cursor_pagination(self, class_client, shared_task_id):
+        """after 파라미터 커서 기반 페이징"""
+        first_page = class_client.get(f"/data?task_id={shared_task_id}&page=1&size=3")
+        assert first_page.status_code == 200
+        first_body = first_page.json()
+
+        if len(first_body["content"]) < 3:
+            return
+
+        last_video_id = first_body["content"][-1]["video_id"]
+        cursor_page = class_client.get(f"/data?task_id={shared_task_id}&after={last_video_id}&size=3")
+        assert cursor_page.status_code == 200
+        cursor_body = cursor_page.json()
+
+        assert "next_after" in cursor_body
+        for item in cursor_body["content"]:
+            assert item["video_id"] > last_video_id
+
+
+# === 시나리오 3: 중복 요청 방어 ===
 
 
 class TestDuplicateRequestProtection:
@@ -177,73 +245,6 @@ class TestDuplicateRequestProtection:
         assert second.json()["data"]["task_id"] != task_id
 
 
-# === 시나리오 3: 데이터 품질 검증 ===
-
-
-class TestDataQualityValidation:
-    """파이프라인 실행 후 거부 사유별 분류가 정확한지 검증한다"""
-
-    def test_rejections_categorized_by_reason(self, client, pipeline_service, db_session):
-        """거부 레코드가 사유별로 정확히 분류된다"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
-
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        # 전체 거부 레코드 조회
-        response = client.get(f"/rejections?task_id={task_id}&size=100")
-        assert response.status_code == 200
-        body = response.json()
-
-        # 거부 사유가 유효한 RejectionReason 값인지 확인
-        valid_reasons = {
-            "duplicate_tagging",
-            "duplicate_label",
-            "negative_obj_count",
-            "fractional_obj_count",
-            "invalid_format",
-            "unknown_schema",
-            "missing_required_field",
-            "invalid_enum_value",
-            "unlinked_record",
-        }
-        for item in body["content"]:
-            assert item["reason"] in valid_reasons
-            assert item["stage"] in ("selection", "odd_tagging", "auto_labeling")
-
-    def test_filter_by_rejection_reason(self, client, pipeline_service, db_session):
-        """GET /rejections?reason=invalid_enum_value → 필터링 동작 확인"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
-
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        response = client.get(f"/rejections?task_id={task_id}&reason=invalid_enum_value&size=100")
-        assert response.status_code == 200
-        body = response.json()
-
-        # 필터 결과는 모두 해당 reason이어야 한다
-        for item in body["content"]:
-            assert item["reason"] == "invalid_enum_value"
-
-    def test_filter_by_stage(self, client, pipeline_service, db_session):
-        """GET /rejections?stage=selection → 단계별 필터 동작 확인"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
-
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        response = client.get(f"/rejections?task_id={task_id}&stage=selection&size=100")
-        assert response.status_code == 200
-        body = response.json()
-
-        for item in body["content"]:
-            assert item["stage"] == "selection"
-
-
 # === 시나리오 4: task_id별 데이터 격리 ===
 
 
@@ -251,8 +252,7 @@ class TestTaskDataIsolation:
     """서로 다른 task_id의 데이터가 격리되는지 검증한다"""
 
     def test_data_isolated_by_task_id(self, client, pipeline_service, db_session):
-        """task_id=aaa 완료 후 task_id=bbb 완료 → 각각 격리된 데이터 조회"""
-        # 첫 번째 분석 실행
+        """task_id별로 격리된 데이터 조회"""
         first = client.post("/analyze")
         assert first.status_code == 202
         task_id_a = first.json()["data"]["task_id"]
@@ -260,7 +260,6 @@ class TestTaskDataIsolation:
         pipeline_service.execute(task_id_a)
         db_session.commit()
 
-        # 두 번째 분석 실행
         second = client.post("/analyze")
         assert second.status_code == 202
         task_id_b = second.json()["data"]["task_id"]
@@ -268,24 +267,20 @@ class TestTaskDataIsolation:
         pipeline_service.execute(task_id_b)
         db_session.commit()
 
-        # task_id=a 데이터만 조회
         resp_a = client.get(f"/data?task_id={task_id_a}")
         assert resp_a.status_code == 200
 
-        # task_id=b 데이터만 조회
         resp_b = client.get(f"/data?task_id={task_id_b}")
         assert resp_b.status_code == 200
 
-        # task_id=a의 상태 확인
         task_a = client.get(f"/analyze/{task_id_a}")
         assert task_a.json()["data"]["status"] == "completed"
 
-        # task_id=b의 상태 확인
         task_b = client.get(f"/analyze/{task_id_b}")
         assert task_b.json()["data"]["status"] == "completed"
 
 
-# === API 엔드포인트 기본 동작 ===
+# === API 엔드포인트 기본 동작 (파이프라인 불필요) ===
 
 
 class TestApiEndpoints:
@@ -319,28 +314,6 @@ class TestApiEndpoints:
         response = client.get("/data?weather=invalid_weather")
         assert response.status_code == 400
 
-    def test_get_rejections_pagination(self, client, pipeline_service, db_session):
-        """거부 레코드 페이지네이션 동작"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
-
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        # 1페이지
-        resp1 = client.get(f"/rejections?task_id={task_id}&page=1&size=5")
-        assert resp1.status_code == 200
-        body1 = resp1.json()
-        assert len(body1["content"]) <= 5
-        assert body1["page"] == 1
-
-        # 총 건수가 5 초과이면 2페이지도 조회
-        if body1["total_elements"] > 5:
-            resp2 = client.get(f"/rejections?task_id={task_id}&page=2&size=5")
-            assert resp2.status_code == 200
-            body2 = resp2.json()
-            assert body2["page"] == 2
-
     def test_error_response_follows_problem_detail(self, client):
         """에러 응답이 ProblemDetail(RFC 7807) 형식을 따른다"""
         response = client.get("/analyze/nonexistent")
@@ -351,20 +324,15 @@ class TestApiEndpoints:
         assert "detail" in body
         assert "code" in body
 
-    def test_search_data_with_multiple_filters(self, client, pipeline_service, db_session):
-        """복수 조건 검색이 정상적으로 동작한다"""
-        response = client.post("/analyze")
-        task_id = response.json()["data"]["task_id"]
+    def test_page_and_after_simultaneous_error(self, client):
+        """page와 after를 동시에 사용하면 400 에러"""
+        response = client.get("/data?page=1&after=100")
+        assert response.status_code == 400
 
-        pipeline_service.execute(task_id)
-        db_session.commit()
-
-        response = client.get(f"/data?task_id={task_id}&weather=sunny&time_of_day=day&page=1&size=10")
-        assert response.status_code == 200
         body = response.json()
-        for item in body["content"]:
-            assert item["weather"] == "sunny"
-            assert item["time_of_day"] == "day"
+        response_text = str(body)
+        assert "page" in response_text.lower()
+        assert "after" in response_text.lower()
 
 
 # === 시나리오 6: Outbox 좀비 복구 ===
@@ -385,12 +353,10 @@ class TestOutboxZombieRecovery:
             def dispatch(self, tid: str) -> None:
                 raise RuntimeError("의도적 실패")
 
-        # 1. 분석 접수
         response = client.post("/analyze")
         assert response.status_code == 202
         task_id = response.json()["data"]["task_id"]
 
-        # 2. FailingDispatcher로 relay → dispatch 실패, PROCESSING 좀비 생성
         dispatcher = FailingDispatcher()
         relay = OutboxRelayService(
             outbox_repo=MongoOutboxRepository(mongo_db),
@@ -399,22 +365,18 @@ class TestOutboxZombieRecovery:
         published = relay.relay()
         assert published == 0
 
-        # Outbox가 PROCESSING 상태로 남아 있는지 확인
         outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
         assert outbox_msg is not None
         assert outbox_msg["status"] == "processing"
 
-        # 3. updated_at를 과거로 수동 조정 (좀비 탐지 조건 충족)
         mongo_db.outbox.update_one(
             {"payload.task_id": task_id},
             {"$set": {"updated_at": datetime.now() - timedelta(minutes=10)}},
         )
 
-        # 4. recover_zombies 호출 → PENDING 복구
         recovered = relay.recover_zombies(threshold_minutes=0)
         assert recovered == 1
 
-        # 5. 상태가 PENDING으로 복구되고 retry_count=1인지 확인
         outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
         assert outbox_msg["status"] == "pending"
         assert outbox_msg["retry_count"] == 1
@@ -431,12 +393,10 @@ class TestOutboxZombieRecovery:
             def dispatch(self, tid: str) -> None:
                 raise RuntimeError("의도적 실패")
 
-        # 1. 분석 접수
         response = client.post("/analyze")
         assert response.status_code == 202
         task_id = response.json()["data"]["task_id"]
 
-        # 2. FailingDispatcher로 relay → PROCESSING 좀비 생성
         dispatcher = FailingDispatcher()
         relay = OutboxRelayService(
             outbox_repo=MongoOutboxRepository(mongo_db),
@@ -444,86 +404,66 @@ class TestOutboxZombieRecovery:
         )
         relay.relay()
 
-        # 3. retry_count를 max_retries(3)으로 수동 설정 + updated_at을 과거로
         mongo_db.outbox.update_one(
             {"payload.task_id": task_id},
             {"$set": {"retry_count": 3, "updated_at": datetime.now() - timedelta(minutes=10)}},
         )
 
-        # 4. recover_zombies 호출 → retry_count=4 > max_retries=3이므로 FAILED
         recovered = relay.recover_zombies(threshold_minutes=0)
         assert recovered == 1
 
-        # 5. 상태가 FAILED인지 확인
         outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
         assert outbox_msg["status"] == "failed"
 
 
-# === 시나리오 7: 커서 기반 페이징 ===
+# === 시나리오 7: 낙관적 잠금 — race condition 방지 ===
 
 
-class TestCursorPagination:
-    """GET /data?after=N 커서 기반 페이지네이션을 검증한다"""
+class TestOutboxOptimisticLock:
+    """relay()가 PUBLISHED로 전환한 메시지를 recover_zombies()가 덮어쓰지 않는지 검증한다"""
 
-    def test_커서_페이징_next_after_반환(self, client, pipeline_service, db_session):
-        """after 파라미터로 커서 기반 페이징 시 next_after가 반환된다"""
-        # 1. 데이터 준비: 분석 실행 완료
+    def test_이미_PUBLISHED된_메시지는_recover가_덮어쓰지_않는다(self, client, mongo_db):
+        """relay()로 PUBLISHED 전환 후 recover_zombies() 실행 → 상태 유지"""
+        from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository
+        from app.application.outbox_relay_service import OutboxRelayService
+        from app.domain.ports import TaskDispatcher
+
+        class NoOpDispatcher(TaskDispatcher):
+            def __init__(self):
+                self.dispatched = []
+
+            def dispatch(self, tid: str) -> None:
+                self.dispatched.append(tid)
+
         response = client.post("/analyze")
         assert response.status_code == 202
         task_id = response.json()["data"]["task_id"]
 
-        pipeline_service.execute(task_id)
-        db_session.commit()
+        repo = MongoOutboxRepository(mongo_db)
+        dispatcher = NoOpDispatcher()
+        relay = OutboxRelayService(outbox_repo=repo, task_dispatcher=dispatcher)
 
-        # 2. offset 기반 첫 페이지로 데이터 존재 확인
-        first_page = client.get(f"/data?task_id={task_id}&page=1&size=3")
-        assert first_page.status_code == 200
-        first_body = first_page.json()
+        published = relay.relay()
+        assert published == 1
 
-        # 데이터가 3건 이상 있어야 커서 테스트 가능
-        if len(first_body["content"]) < 3:
-            return
+        outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
+        assert outbox_msg["status"] == "published"
 
-        # 3. 첫 페이지 마지막 항목의 video_id로 커서 페이징
-        last_video_id = first_body["content"][-1]["video_id"]
-        cursor_page = client.get(f"/data?task_id={task_id}&after={last_video_id}&size=3")
-        assert cursor_page.status_code == 200
-        cursor_body = cursor_page.json()
+        recovered = relay.recover_zombies(threshold_minutes=0)
+        assert recovered == 0
 
-        # 커서 모드에서는 next_after 필드가 존재 (결과가 있으면 int, 없으면 None)
-        assert "next_after" in cursor_body
-
-        # 커서 결과의 video_id는 모두 last_video_id보다 커야 한다
-        for item in cursor_body["content"]:
-            assert item["video_id"] > last_video_id
-
-    def test_page와_after_동시_사용시_에러(self, client):
-        """page와 after를 동시에 사용하면 400 에러를 반환한다"""
-        response = client.get("/data?page=1&after=100")
-        assert response.status_code == 400
-
-        body = response.json()
-        # detail 또는 errors에 page와 after 관련 메시지가 포함되어야 한다
-        response_text = str(body)
-        assert "page" in response_text.lower()
-        assert "after" in response_text.lower()
+        outbox_msg = mongo_db.outbox.find_one({"payload.task_id": task_id})
+        assert outbox_msg["status"] == "published"
 
 
 # === 시나리오 8: MongoDB 트랜잭션 롤백 검증 ===
 
 
 class TestMongoTransactionRollback:
-    """MongoDB 트랜잭션의 커밋/롤백 동작을 실제 Repository로 검증한다
-
-    Repository는 내부적으로 get_current_session()을 호출하여
-    트랜잭션 세션을 MongoDB 연산에 전달한다.
-    세션 없이 직접 insert_one()을 호출하면 트랜잭션 밖에서 실행되므로,
-    반드시 Repository를 통해 검증해야 한다.
-    """
+    """MongoDB 트랜잭션의 커밋/롤백 동작을 실제 Repository로 검증한다"""
 
     def test_트랜잭션_내_예외시_MongoDB_롤백(self, mongo_client, mongo_db):
         """트랜잭션 안에서 예외 발생 시 저장된 Outbox 메시지가 롤백된다"""
-
         from app.adapter.outbound.mongodb.repositories import MongoOutboxRepository
         from app.adapter.outbound.mongodb.transaction import MongoTransactionManager
         from app.domain.models import OutboxMessage
@@ -542,7 +482,6 @@ class TestMongoTransactionRollback:
         except RuntimeError:
             pass
 
-        # 롤백 확인: Outbox에 메시지가 없어야 한다 (_id = message_id)
         assert mongo_db.outbox.find_one({"_id": "rollback-test-msg"}) is None
 
     def test_트랜잭션_정상_완료시_MongoDB_커밋(self, mongo_client, mongo_db):
@@ -561,5 +500,4 @@ class TestMongoTransactionRollback:
 
         tx.execute(_success_op)
 
-        # 커밋 확인: Outbox에 메시지가 있어야 한다 (_id = message_id)
         assert mongo_db.outbox.find_one({"_id": "commit-test-msg"}) is not None

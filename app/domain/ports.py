@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 
-from app.domain.enums import TaskStatus
+from app.domain.enums import OutboxStatus, TaskStatus
 from app.domain.models import (
     AnalyzeTask,
     DataSearchCriteria,
@@ -145,6 +145,18 @@ class OutboxRepository(ABC):
     @abstractmethod
     def save(self, message: OutboxMessage) -> None:
         """도메인 객체를 저장한다. 이미 존재하면 덮어쓴다 (upsert)."""
+        ...
+
+    @abstractmethod
+    def save_if_status(self, message: OutboxMessage, expected_status: "OutboxStatus") -> bool:
+        """현재 상태가 expected_status일 때만 저장한다 (낙관적 잠금).
+
+        race condition 방지: relay()와 recover_zombies()가 동시에 같은 메시지를
+        처리할 때, 이미 상태가 변경된 메시지를 덮어쓰지 않는다.
+
+        Returns:
+            저장 성공 시 True, 상태 불일치로 스킵 시 False
+        """
         ...
 
     @abstractmethod
